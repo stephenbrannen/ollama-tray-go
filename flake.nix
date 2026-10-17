@@ -21,7 +21,7 @@
             src = self;
             subPackages = [ "cmd/ollama-tray" ];
             # Must be updated whenever go.mod or go.sum change.
-            vendorHash = "sha256-HejxjovHSSbUDFuEvjJkYN5Tep0doYjtGS+U9Zj6tho=";
+            vendorHash = "sha256-ZR0bhxRBAB2hyiSCLod+Fk5BxsqWvMIC5Lx2WmPNX6I=";
             env.CGO_ENABLED = 0;
             ldflags = [
               "-s"
