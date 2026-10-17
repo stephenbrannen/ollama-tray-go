@@ -95,6 +95,8 @@ Or add it to your system flake:
 }
 ```
 
+* While the repository is private, add `access-tokens = github.com=<token>` to `nix.conf` so Nix can fetch it.
+
 How the three ways to get nixpkgs differ:
 
 * `nix run github:...` uses the nixpkgs pinned in this repository's `flake.lock`. Until a binary cache is published, Nix builds the tray from source. On an empty store that downloads about 215 MiB (742 MiB unpacked) of build tools, mainly Go and GCC, for a 9.9 MiB program.
@@ -102,8 +104,6 @@ How the three ways to get nixpkgs differ:
 * `--override-input nixpkgs nixpkgs` does the same for a single command, such as `nix run github:stephenbrannen/ollama-tray-go --override-input nixpkgs nixpkgs`, without editing a flake.
 
 To skip the build, use the release archive in the next section. It holds a prebuilt binary, so it needs neither Nix nor Go.
-
-* While the repository is private, add `access-tokens = github.com=<token>` to `nix.conf` so Nix can fetch it.
 
 ## Install from a release
 
