@@ -7,21 +7,27 @@ builds:
     goarch: [amd64, arm64]
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    mod_timestamp: '{{ .CommitTimestamp }}'
     ldflags:
       - -s -w -X github.com/stephenbrannen/ollama-tray-go/internal/version.Version={{.Version}}
 
 archives:
   - formats: [tar.gz]
+    # Pin the file times so the archive bytes do not depend on checkout time.
+    builds_info:
+      mtime: '{{ .CommitDate }}'
     files:
-      - README.md
-      - ollama-tray.desktop
+      - src: README.md
+        info:
+          mtime: '{{ .CommitDate }}'
+      - src: ollama-tray.desktop
+        info:
+          mtime: '{{ .CommitDate }}'
 
 checksum:
   name_template: checksums.txt
 
 changelog:
-  filters:
-    exclude:
-      - '^docs:'
-      - '^test:'
-      - '^chore:'
+  use: github
