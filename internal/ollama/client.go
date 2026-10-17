@@ -134,7 +134,8 @@ func (c *Client) Unload(ctx context.Context, name string) error {
 
 // KeepLoaded tells the server to hold a model in memory until it is stopped
 // (POST /api/generate with keep_alive -1). It changes this model only, not
-// the server's default keep-alive.
+// the server's default keep-alive. A model that has already unloaded is
+// loaded again first, because the server loads a model to answer the call.
 func (c *Client) KeepLoaded(ctx context.Context, name string) error {
 	return c.setKeepAlive(ctx, name, -1)
 }

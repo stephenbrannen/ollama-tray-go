@@ -77,7 +77,7 @@ type app struct {
 	ui      ui
 	refresh chan struct{}
 	actions chan action
-	// now is the clock; tests replace it to expire a stop failure without waiting.
+	// now is the clock; tests replace it to expire an action failure without waiting.
 	now func() time.Time
 
 	// last is read and written only by the poll goroutine.

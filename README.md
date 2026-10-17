@@ -8,7 +8,7 @@ A Linux system tray icon that shows which models an Ollama server has loaded, an
 * Grey: the server answers but nothing is loaded, or the first check has not returned yet.
 * Red: the server cannot be reached, answers with an error, or sends a reply the tray cannot read.
 
-Hover over the icon to see the server address, each loaded model with its VRAM use and the time until the server unloads it, and the last failed stop. A failed stop leaves the tooltip after 60 seconds.
+Hover over the icon to see the server address, each loaded model with its VRAM use and the time until the server unloads it, and the last failed action. A failed action leaves the tooltip after 60 seconds.
 
 ## Keeping models loaded
 
@@ -28,7 +28,7 @@ The tooltip shows when each model unloads on its own, for example `llama3:8b (4.
 * `Refresh now` polls the server at once.
 * `Quit` closes the tray.
 
-Requests run in the background, so the menu stays responsive while a large model unloads. If one fails, the tooltip shows the error for 60 seconds.
+Requests run in the background, so the menu stays responsive while a large model unloads.
 
 The tray polls every `--interval` and runs until you pick `Quit` or it receives SIGINT or SIGTERM.
 
