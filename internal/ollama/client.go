@@ -61,8 +61,7 @@ func NewHTTPClient() *http.Client {
 	}
 }
 
-// NewClient returns a Client for baseURL (see ResolveHost). Each call has its
-// own timeout, so httpClient needs none.
+// NewClient returns a Client for baseURL (see ResolveHost).
 func NewClient(baseURL string, httpClient *http.Client) *Client {
 	return &Client{
 		baseURL:       strings.TrimRight(baseURL, "/"),
