@@ -4,3 +4,4 @@ set -euo pipefail
 # The tests are too slow for every commit. This runs the same race and
 # coverage gate as CI.
 go run -tags task ./tasks/coverage.go
+go test -tags task -race -count=1 ./tasks/

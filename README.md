@@ -69,7 +69,7 @@ The package installs `ollama-tray.desktop` under `share/applications`. To start 
 
 * `nix develop` provides go and gopls (x86_64-linux and aarch64-linux). golangci-lint and govulncheck are `tool` directives in `go.mod`, so run them as `go tool golangci-lint` and `go tool govulncheck`.
 * `git config core.hooksPath .githooks` enables the hooks. `pre-commit` runs gofmt, `go mod tidy -diff`, `go vet`, golangci-lint, and govulncheck. `pre-push` runs the tests.
-* `go run -tags task ./tasks/coverage.go` runs `go test -race -count=1 ./...` and fails below 80% statement coverage. The count leaves out `cmd/ollama-tray` and `internal/tray`, which are startup and tray wiring.
+* `go run -tags task ./tasks/coverage.go` runs `go test -race -count=1 ./...` and fails below 80% statement coverage. The count leaves out `cmd/ollama-tray` and `internal/tray`, which are startup and tray wiring. `go test -tags task ./tasks/` tests that program.
 * `GOOS=linux CGO_ENABLED=0 go build ./...` checks the Linux build.
 * `nix fmt` formats `flake.nix`. `nix build` builds the package and `nix flake check` also runs every package's tests.
 
