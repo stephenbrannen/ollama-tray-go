@@ -175,7 +175,20 @@ type ollamaServer struct {
 	http    *http.Client
 }
 
-func (o ollamaServer) post(ctx context.Context, path string, payload map[string]any) error {
+// Each Ollama call has its own deadline, so a stuck server fails the test
+// instead of holding it until the CI job times out.
+const (
+	// pullTimeout is long because the first run downloads the model.
+	pullTimeout          = 15 * time.Minute
+	loadTimeout          = 5 * time.Minute
+	unloadRequestTimeout = time.Minute
+	psTimeout            = 10 * time.Second
+	maxPsBody            = 1 << 20
+)
+
+func (o ollamaServer) post(ctx context.Context, timeout time.Duration, path string, payload map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", path, err)
@@ -197,19 +210,21 @@ func (o ollamaServer) post(ctx context.Context, path string, payload map[string]
 }
 
 func (o ollamaServer) pull(ctx context.Context, model string) error {
-	return o.post(ctx, "/api/pull", map[string]any{"model": model, "stream": false})
+	return o.post(ctx, pullTimeout, "/api/pull", map[string]any{"model": model, "stream": false})
 }
 
 // load loads model. A generate call with no prompt only loads it.
 func (o ollamaServer) load(ctx context.Context, model string) error {
-	return o.post(ctx, "/api/generate", map[string]any{"model": model, "keep_alive": "5m"})
+	return o.post(ctx, loadTimeout, "/api/generate", map[string]any{"model": model, "keep_alive": "5m"})
 }
 
 func (o ollamaServer) unload(ctx context.Context, model string) error {
-	return o.post(ctx, "/api/generate", map[string]any{"model": model, "keep_alive": 0})
+	return o.post(ctx, unloadRequestTimeout, "/api/generate", map[string]any{"model": model, "keep_alive": 0})
 }
 
 func (o ollamaServer) loadedNames(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, psTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, o.baseURL+"/api/ps", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build /api/ps: %w", err)
@@ -219,12 +234,15 @@ func (o ollamaServer) loadedNames(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("GET /api/ps: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /api/ps: status %d", resp.StatusCode)
+	}
 	var ps struct {
 		Models []struct {
 			Name string `json:"name"`
 		} `json:"models"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&ps); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxPsBody)).Decode(&ps); err != nil {
 		return nil, fmt.Errorf("decode /api/ps: %w", err)
 	}
 	names := make([]string, 0, len(ps.Models))

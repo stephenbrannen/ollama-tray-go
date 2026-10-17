@@ -6,7 +6,6 @@
 package e2e
 
 import (
-	"context"
 	"net/http"
 	"net/url"
 	"os"
@@ -44,10 +43,7 @@ func TestTrayFollowsARealServer(t *testing.T) {
 	ctx := t.Context()
 
 	server := ollamaServer{baseURL: ollamaURL, http: &http.Client{}}
-	// The first run downloads the model, so this waits much longer than the other calls.
-	pullCtx, cancelPull := context.WithTimeout(ctx, 15*time.Minute)
-	defer cancelPull()
-	require.NoError(t, server.pull(pullCtx, model))
+	require.NoError(t, server.pull(ctx, model))
 	// A model left loaded by an earlier run would make the idle checks meaningless.
 	loaded, err := server.loadedNames(ctx)
 	require.NoError(t, err)
