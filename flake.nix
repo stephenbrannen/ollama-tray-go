@@ -1,6 +1,13 @@
 {
   description = "ollama-tray-go: Linux system tray for Ollama";
 
+  # Nix asks once whether to trust these settings, then downloads the
+  # prebuilt package instead of compiling it.
+  nixConfig = {
+    extra-substituters = [ "https://ollama-tray.cachix.org" ];
+    extra-trusted-public-keys = [ "ollama-tray.cachix.org-1:VsA+mvlRdugWzqzTzrRhqRpJ25Sc9tbL6z4or9oHc+U=" ];
+  };
+
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
   outputs =

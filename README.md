@@ -73,6 +73,8 @@ Try it without installing:
 nix run github:stephenbrannen/ollama-tray-go
 ```
 
+Nix downloads the prebuilt package from the `ollama-tray` Cachix cache instead of compiling it. The first time, Nix asks whether to trust the cache settings in the flake. Answer `y`, or pass `--accept-flake-config` to skip the prompt.
+
 Or add it to your system flake:
 
 ```nix
@@ -90,6 +92,15 @@ Or add it to your system flake:
   };
 }
 ```
+
+* To use the cache for every build on the system, add it to your NixOS configuration. Without this, a system rebuild compiles the package, because only the flake's own settings trust the cache:
+
+  ```nix
+  nix.settings = {
+    substituters = [ "https://ollama-tray.cachix.org" ];
+    trusted-public-keys = [ "ollama-tray.cachix.org-1:VsA+mvlRdugWzqzTzrRhqRpJ25Sc9tbL6z4or9oHc+U=" ];
+  };
+  ```
 
 * While the repository is private, add `access-tokens = github.com=<token>` to `nix.conf` so Nix can fetch it.
 
