@@ -59,7 +59,8 @@ func ResolveHost(flag string) (string, error) {
 	// Checking the raw text also catches an empty query ("box?") that
 	// url.URL leaves no trace of.
 	if u.User != nil || strings.ContainsAny(raw, "?#") {
-		return "", fmt.Errorf("%w %q: user info, query and fragment are not allowed", ErrInvalidHost, raw)
+		// The message leaves out the address because it can hold a password.
+		return "", fmt.Errorf("%w: user info, query and fragment are not allowed", ErrInvalidHost)
 	}
 
 	host, port := u.Hostname(), u.Port()
