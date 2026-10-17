@@ -17,8 +17,13 @@ import (
 // It wraps connection errors, timeouts and non-2xx responses.
 var ErrUnavailable = errors.New("ollama server unavailable")
 
-// maxErrorBody caps how much of an error response is quoted in the error text.
-const maxErrorBody = 512
+const (
+	// maxErrorBody caps how much of an error response is quoted in the error text.
+	maxErrorBody = 512
+	// maxResponseBody caps a success response. The host is user-configured, so
+	// a wrong or hostile server must not make the tray buffer unbounded data.
+	maxResponseBody = 1 << 20
+)
 
 // LoadedModel is a model currently held in memory by the server.
 type LoadedModel struct {
@@ -108,7 +113,7 @@ func (c *Client) do(ctx context.Context, method, path string, payload []byte) ([
 			ErrUnavailable, method, path, resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 	if err != nil {
 		return nil, fmt.Errorf("%w: read %s %s: %w", ErrUnavailable, method, path, err)
 	}

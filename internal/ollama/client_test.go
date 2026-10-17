@@ -20,6 +20,8 @@ func newTestClient(t *testing.T, handler http.HandlerFunc, timeout time.Duration
 }
 
 func TestLoadedModelsParsesResponse(t *testing.T) {
+	t.Parallel()
+
 	expires := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name string
@@ -45,6 +47,8 @@ func TestLoadedModelsParsesResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, http.MethodGet, r.Method)
 				assert.Equal(t, "/api/ps", r.URL.Path)
@@ -60,6 +64,8 @@ func TestLoadedModelsParsesResponse(t *testing.T) {
 }
 
 func TestLoadedModelsUnavailable(t *testing.T) {
+	t.Parallel()
+
 	refused := httptest.NewServer(http.NotFoundHandler())
 	refusedURL := refused.URL
 	refused.Close()
@@ -101,6 +107,8 @@ func TestLoadedModelsUnavailable(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			models, err := tt.client(t).LoadedModels(context.Background())
 
 			require.ErrorIs(t, err, ErrUnavailable)
@@ -110,6 +118,8 @@ func TestLoadedModelsUnavailable(t *testing.T) {
 }
 
 func TestLoadedModelsHonorsContext(t *testing.T) {
+	t.Parallel()
+
 	client := newTestClient(t, func(http.ResponseWriter, *http.Request) {
 		t.Error("request should not be sent with a canceled context")
 	}, time.Second)
@@ -123,6 +133,8 @@ func TestLoadedModelsHonorsContext(t *testing.T) {
 }
 
 func TestUnloadSendsKeepAliveZero(t *testing.T) {
+	t.Parallel()
+
 	var gotMethod, gotPath, gotBody string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath = r.Method, r.URL.Path
@@ -140,6 +152,8 @@ func TestUnloadSendsKeepAliveZero(t *testing.T) {
 }
 
 func TestUnloadUnavailable(t *testing.T) {
+	t.Parallel()
+
 	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, `{"error":"model not found"}`, http.StatusNotFound)
 	}, time.Second)
