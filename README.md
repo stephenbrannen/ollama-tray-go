@@ -49,9 +49,17 @@ Each tagged release has a `tar.gz` archive per architecture (`linux_amd64`, `lin
 
 * Download the archive for your architecture from the Releases page, or with `gh release download <tag> -R stephenbrannen/ollama-tray-go`.
 * Verify it with `sha256sum -c checksums.txt --ignore-missing`.
+* Verify its build provenance with `gh attestation verify <archive> -R stephenbrannen/ollama-tray-go`. This proves the archive came from this repository's release workflow.
 * Extract it with `tar xzf <archive>`, then move `ollama-tray` to `~/.local/bin`.
 * Copy `ollama-tray.desktop` to `~/.config/autostart/` to start the tray on login.
 * While the repository is private, only collaborators can download releases.
+
+### Withdraw a bad release
+
+* Delete the release and its tag with `gh release delete <tag> --cleanup-tag -R stephenbrannen/ollama-tray-go`.
+* Fix the problem on `main`, then tag a patch version (for example `v0.1.2`). Do not reuse the deleted tag.
+
+The release workflow runs `go vet` and the tests, and refuses a tag whose commit is not on `main`.
 
 ## Autostart
 
