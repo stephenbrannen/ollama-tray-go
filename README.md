@@ -43,6 +43,16 @@ Or add it to your system flake:
 * While the repository is private, add `access-tokens = github.com=<token>` to `nix.conf` so Nix can fetch it.
 * GNOME needs the AppIndicator extension to show tray icons.
 
+## Install from a release
+
+Each tagged release has a `tar.gz` archive per architecture (`linux_amd64`, `linux_arm64`) and a `checksums.txt`.
+
+* Download the archive for your architecture from the Releases page, or with `gh release download <tag> -R stephenbrannen/ollama-tray-go`.
+* Verify it with `sha256sum -c checksums.txt --ignore-missing`.
+* Extract it with `tar xzf <archive>`, then move `ollama-tray` to `~/.local/bin`.
+* Copy `ollama-tray.desktop` to `~/.config/autostart/` to start the tray on login.
+* While the repository is private, only collaborators can download releases.
+
 ## Autostart
 
 The package installs `ollama-tray.desktop` under `share/applications`. To start the tray on login, copy or link it into `~/.config/autostart/`.
