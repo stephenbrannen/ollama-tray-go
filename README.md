@@ -106,11 +106,9 @@ Or add it to your system flake:
   };
   ```
 
-* While the repository is private, add `access-tokens = github.com=<token>` to `nix.conf` so Nix can fetch it.
-
 How the three ways to get nixpkgs differ:
 
-* `nix run github:...` uses the nixpkgs pinned in this repository's `flake.lock`. Until a binary cache is published, Nix builds the tray from source. On an empty store that downloads about 215 MiB (742 MiB unpacked) of build tools, mainly Go and GCC, for a 9.9 MiB program.
+* `nix run github:...` uses the nixpkgs pinned in this repository's `flake.lock`. On x86_64-linux it downloads the prebuilt program from the binary cache, about 10 MiB. On other systems, or if you decline the cache, Nix builds it from source, which on an empty store downloads about 215 MiB (742 MiB unpacked) of build tools, mainly Go and GCC.
 * `inputs.ollama-tray.inputs.nixpkgs.follows = "nixpkgs"` builds the tray with your nixpkgs, so it shares your Go and libraries and adds no second nixpkgs to your system. The tray then needs your nixpkgs to have Go 1.26 or newer.
 * `--override-input nixpkgs nixpkgs` does the same for a single command, such as `nix run github:stephenbrannen/ollama-tray-go --override-input nixpkgs nixpkgs`, without editing a flake.
 
@@ -122,10 +120,9 @@ Each tagged release has a `tar.gz` archive per architecture (`linux_amd64`, `lin
 
 * Download the archive for your architecture and `checksums.txt` from the Releases page, or with `gh release download <tag> -R stephenbrannen/ollama-tray-go -p '*_linux_amd64.tar.gz' -p checksums.txt` (use `arm64` on ARM).
 * Verify it with `sha256sum -c checksums.txt --ignore-missing`.
-* Verify its build provenance with `gh attestation verify <archive> -R stephenbrannen/ollama-tray-go`. This proves the archive came from this repository's release workflow. Releases get an attestation only while the repository is public.
+* Verify its build provenance with `gh attestation verify <archive> -R stephenbrannen/ollama-tray-go`. This proves the archive came from this repository's release workflow. Releases from v0.1.2 on carry one; v0.1.0 and v0.1.1 were published while the repository was private and have none.
 * Extract it with `tar xzf <archive>`, then move `ollama-tray` to `~/.local/bin`.
 * Copy `ollama-tray.desktop` to `~/.config/autostart/` to start the tray on login. It runs `ollama-tray` from your `PATH`.
-* While the repository is private, only collaborators can download releases.
 
 ### Withdraw a bad release
 
