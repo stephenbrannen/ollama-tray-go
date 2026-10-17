@@ -1,4 +1,7 @@
 version: "2"
+run:
+  build-tags:
+    - task
 linters:
   enable:
     - errcheck
@@ -10,6 +13,8 @@ linters:
     - gosec
     - bodyclose
     - contextcheck
+    - testifylint
+    - exhaustive
 formatters:
   enable:
     - gofumpt

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResolveHost(t *testing.T) {
@@ -41,7 +42,7 @@ func TestResolveHost(t *testing.T) {
 
 			got, err := ResolveHost(tt.flag)
 
-			assert.ErrorIs(t, err, tt.err)
+			require.ErrorIs(t, err, tt.err)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -69,7 +70,7 @@ func TestResolveHostRejects(t *testing.T) {
 
 			got, err := ResolveHost(tt.flag)
 
-			assert.ErrorIs(t, err, tt.want)
+			require.ErrorIs(t, err, tt.want)
 			assert.Empty(t, got)
 		})
 	}
