@@ -20,6 +20,11 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
       - run: go test -race -count=1 ./...
       - run: GOOS=linux CGO_ENABLED=0 go build ./...
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: check
 
   nix:
     runs-on: ubuntu-latest

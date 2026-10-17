@@ -5,3 +5,5 @@ bin/
 result
 result-*
 .direnv/
+
+dist/
