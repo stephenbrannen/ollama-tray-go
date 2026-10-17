@@ -15,6 +15,7 @@ import (
 
 	"github.com/stephenbrannen/ollama-tray-go/internal/ollama"
 	"github.com/stephenbrannen/ollama-tray-go/internal/tray"
+	"github.com/stephenbrannen/ollama-tray-go/internal/version"
 )
 
 const (
@@ -27,6 +28,9 @@ const (
 // errReported marks a flag error the flag package already printed.
 var errReported = errors.New("flag error already reported")
 
+// errVersion reports that --version was requested; the caller prints the version and exits.
+var errVersion = errors.New("version requested")
+
 type config struct {
 	host     string
 	interval time.Duration
@@ -38,11 +42,15 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs.SetOutput(stderr)
 	hostFlag := fs.String("host", "", "Ollama server address (default: $OLLAMA_HOST, else http://127.0.0.1:11434)")
 	interval := fs.Duration("interval", defaultInterval, "time between status polls")
+	showVersion := fs.Bool("version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return config{}, err
 		}
 		return config{}, errReported
+	}
+	if *showVersion {
+		return config{}, errVersion
 	}
 	if *interval <= 0 {
 		return config{}, fmt.Errorf("--interval must be positive, got %s", *interval)
@@ -58,6 +66,9 @@ func main() {
 	cfg, err := parseConfig(os.Args[1:], os.Stderr)
 	switch {
 	case errors.Is(err, flag.ErrHelp):
+		return
+	case errors.Is(err, errVersion):
+		fmt.Println(version.String())
 		return
 	case err != nil:
 		if !errors.Is(err, errReported) {
