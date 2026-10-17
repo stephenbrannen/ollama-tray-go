@@ -1,24 +1,33 @@
 package ollama
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
 const (
-	defaultHost      = "localhost"
-	defaultPort      = "11434"
-	defaultHTTPSPort = "443"
+	defaultHost = "127.0.0.1"
+	defaultPort = "11434"
 )
 
+// ErrInvalidPort is returned by ResolveHost when the port is not a number
+// from 1 to 65535.
+var ErrInvalidPort = errors.New("invalid port")
+
 // ResolveHost returns the server base URL: the flag if set, else OLLAMA_HOST,
-// else http://localhost:11434.
+// else http://127.0.0.1:11434.
 //
-// The scheme and port defaults match the ollama CLI, so a value that works
-// for `ollama ps` works here: no scheme means http, and no port means 11434
-// (443 for https).
-func ResolveHost(flag string) string {
+// No scheme means http. No port means 11434 for every scheme, including
+// https, because an Ollama server is almost never on 80 or 443 and a proxy
+// user gives the port explicitly. An empty host means 127.0.0.1, because
+// localhost can resolve to ::1 while Ollama listens on IPv4 only. A path
+// after the host is kept without its trailing slash. An invalid port is an
+// error, not a silent fallback.
+func ResolveHost(flag string) (string, error) {
 	raw := strings.TrimSpace(flag)
 	if raw == "" {
 		raw = strings.TrimSpace(os.Getenv("OLLAMA_HOST"))
@@ -32,20 +41,24 @@ func ResolveHost(flag string) string {
 		raw = rest
 	}
 
-	raw = strings.TrimRight(raw, "/")
-	host, port, err := net.SplitHostPort(raw)
+	authority, path, _ := strings.Cut(raw, "/")
+	path = strings.TrimRight(path, "/")
+	if path != "" {
+		path = "/" + path
+	}
+
+	host, port, err := net.SplitHostPort(authority)
 	if err != nil {
-		host, port = strings.Trim(raw, "[]"), ""
+		host, port = strings.Trim(authority, "[]"), ""
 	}
 	if host == "" {
 		host = defaultHost
 	}
 	if port == "" {
 		port = defaultPort
-		if scheme == "https" {
-			port = defaultHTTPSPort
-		}
+	} else if n, err := strconv.ParseUint(port, 10, 16); err != nil || n == 0 {
+		return "", fmt.Errorf("%w %q", ErrInvalidPort, port)
 	}
 
-	return scheme + "://" + net.JoinHostPort(host, port)
+	return scheme + "://" + net.JoinHostPort(host, port) + path, nil
 }
