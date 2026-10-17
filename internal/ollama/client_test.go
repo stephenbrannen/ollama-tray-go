@@ -34,7 +34,32 @@ func TestLoadedModelsParsesResponse(t *testing.T) {
 		{
 			name: "one",
 			body: `{"models":[{"name":"llama3:8b","size_vram":5000,"expires_at":"2026-10-16T12:00:00Z"}]}`,
-			want: []LoadedModel{{Name: "llama3:8b", SizeVRAM: 5000}},
+			want: []LoadedModel{{Name: "llama3:8b", SizeVRAM: 5000, ExpiresAt: time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)}},
+		},
+		{
+			name: "fractional seconds and zone offset",
+			body: `{"models":[{"name":"a","expires_at":"2026-10-16T08:00:00.123456789-04:00"}]}`,
+			want: []LoadedModel{{Name: "a", ExpiresAt: time.Date(2026, 10, 16, 12, 0, 0, 123456789, time.UTC)}},
+		},
+		{
+			name: "keep alive forever",
+			body: `{"models":[{"name":"a","expires_at":"2319-01-27T02:29:09.005268606Z"}]}`,
+			want: []LoadedModel{{Name: "a", ExpiresAt: time.Date(2319, 1, 27, 2, 29, 9, 5268606, time.UTC)}},
+		},
+		{
+			name: "unreadable time is unknown",
+			body: `{"models":[{"name":"a","expires_at":"next tuesday"}]}`,
+			want: []LoadedModel{{Name: "a"}},
+		},
+		{
+			name: "time of the wrong type is unknown",
+			body: `{"models":[{"name":"a","expires_at":12345}]}`,
+			want: []LoadedModel{{Name: "a"}},
+		},
+		{
+			name: "missing time is unknown",
+			body: `{"models":[{"name":"a"}]}`,
+			want: []LoadedModel{{Name: "a"}},
 		},
 		{
 			name: "two",
@@ -42,8 +67,8 @@ func TestLoadedModelsParsesResponse(t *testing.T) {
 				`{"name":"llama3:8b","size_vram":5000,"expires_at":"2026-10-16T12:00:00Z"},` +
 				`{"name":"qwen:4b","size_vram":0,"expires_at":"2026-10-16T12:00:00Z"}]}`,
 			want: []LoadedModel{
-				{Name: "llama3:8b", SizeVRAM: 5000},
-				{Name: "qwen:4b", SizeVRAM: 0},
+				{Name: "llama3:8b", SizeVRAM: 5000, ExpiresAt: time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)},
+				{Name: "qwen:4b", SizeVRAM: 0, ExpiresAt: time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)},
 			},
 		},
 	}

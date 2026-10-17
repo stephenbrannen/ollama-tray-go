@@ -213,9 +213,11 @@ func (o ollamaServer) pull(ctx context.Context, model string) error {
 	return o.post(ctx, pullTimeout, "/api/pull", map[string]any{"model": model, "stream": false})
 }
 
-// load loads model. A generate call with no prompt only loads it.
-func (o ollamaServer) load(ctx context.Context, model string) error {
-	return o.post(ctx, loadTimeout, "/api/generate", map[string]any{"model": model, "keep_alive": "5m"})
+// load loads model, or changes how long it stays loaded. A generate call with
+// no prompt only loads it. keepAlive is a duration string such as "10m", or -1
+// to keep the model loaded forever.
+func (o ollamaServer) load(ctx context.Context, model string, keepAlive any) error {
+	return o.post(ctx, loadTimeout, "/api/generate", map[string]any{"model": model, "keep_alive": keepAlive})
 }
 
 func (o ollamaServer) unload(ctx context.Context, model string) error {

@@ -38,6 +38,9 @@ const (
 type LoadedModel struct {
 	Name     string
 	SizeVRAM int64 // bytes
+	// ExpiresAt is when the server unloads the model on its own. The zero
+	// value means the server sent no time, or one the client cannot read.
+	ExpiresAt time.Time
 }
 
 // Client talks to one Ollama server.
@@ -75,6 +78,9 @@ type psResponse struct {
 	Models []struct {
 		Name     string `json:"name"`
 		SizeVRAM int64  `json:"size_vram"`
+		// ExpiresAt stays raw so that a format the server changes leaves the
+		// time unknown instead of failing the whole poll.
+		ExpiresAt json.RawMessage `json:"expires_at"`
 	} `json:"models"`
 }
 
@@ -94,9 +100,23 @@ func (c *Client) LoadedModels(ctx context.Context) ([]LoadedModel, error) {
 
 	models := make([]LoadedModel, 0, len(parsed.Models))
 	for _, m := range parsed.Models {
-		models = append(models, LoadedModel{Name: m.Name, SizeVRAM: m.SizeVRAM})
+		models = append(models, LoadedModel{Name: m.Name, SizeVRAM: m.SizeVRAM, ExpiresAt: parseExpiry(m.ExpiresAt)})
 	}
 	return models, nil
+}
+
+// parseExpiry reads an RFC 3339 time from a JSON string. Anything else gives
+// the zero time, which means unknown.
+func parseExpiry(raw json.RawMessage) time.Time {
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339Nano, text)
+	if err != nil {
+		return time.Time{}
+	}
+	return t.UTC()
 }
 
 type unloadRequest struct {

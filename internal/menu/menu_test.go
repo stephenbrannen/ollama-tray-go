@@ -155,6 +155,35 @@ func TestTooltip(t *testing.T) {
 	}
 }
 
+func TestTooltipUnloadTime(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name      string
+		expiresAt time.Time
+		want      string
+	}{
+		{"unknown", time.Time{}, "http://h:11434\nllama3 (4.5 GB VRAM)"},
+		{"already past", now.Add(-time.Minute), "http://h:11434\nllama3 (4.5 GB VRAM, unloads in <1m)"},
+		{"seconds", now.Add(59 * time.Second), "http://h:11434\nllama3 (4.5 GB VRAM, unloads in <1m)"},
+		{"one minute", now.Add(time.Minute), "http://h:11434\nllama3 (4.5 GB VRAM, unloads in 1m)"},
+		{"minutes round down", now.Add(9*time.Minute + 59*time.Second), "http://h:11434\nllama3 (4.5 GB VRAM, unloads in 9m)"},
+		{"just under an hour", now.Add(time.Hour - time.Second), "http://h:11434\nllama3 (4.5 GB VRAM, unloads in 59m)"},
+		{"whole hours", now.Add(2 * time.Hour), "http://h:11434\nllama3 (4.5 GB VRAM, unloads in 2h)"},
+		{"hours and minutes", now.Add(3*time.Hour + 12*time.Minute + 30*time.Second), "http://h:11434\nllama3 (4.5 GB VRAM, unloads in 3h 12m)"},
+		{"days stay in hours", now.Add(72 * time.Hour), "http://h:11434\nllama3 (4.5 GB VRAM, unloads in 72h)"},
+		{"forever", time.Date(2319, 1, 27, 2, 29, 9, 0, time.UTC), "http://h:11434\nllama3 (4.5 GB VRAM, kept loaded)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			loaded := []ollama.LoadedModel{{Name: "llama3", SizeVRAM: 4_500_000_000, ExpiresAt: tt.expiresAt}}
+			assert.Equal(t, tt.want, menu.Tooltip("http://h:11434", loaded, nil, menu.StopFailure{}, now))
+		})
+	}
+}
+
 func TestCheckingTooltip(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "http://h:11434\nchecking", menu.CheckingTooltip("http://h:11434"))
