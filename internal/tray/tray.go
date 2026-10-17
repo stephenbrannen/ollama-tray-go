@@ -185,6 +185,8 @@ func (a *app) stopEveryModel() {
 	a.enqueueStop(names)
 }
 
+// enqueueStop never blocks the click handler. The queue holds more requests
+// than a person can click while one stop runs, so a full queue is an edge case.
 func (a *app) enqueueStop(names []string) {
 	select {
 	case a.stops <- names:
