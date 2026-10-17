@@ -329,7 +329,7 @@ func TestUnloadReportsEveryFailureAndClearsItOnSuccess(t *testing.T) {
 	a.unload(t.Context(), "a", "b", "c")
 	a.pollOnce(t.Context())
 
-	assert.EqualError(t, a.stopErr, "a: boom\nc: boom")
+	require.EqualError(t, a.stopErr, "a: boom\nc: boom")
 	assert.Contains(t, fu.take(), "tooltip:host\nno model loaded\nstop failed: a: boom\nc: boom")
 	assert.Len(t, a.refresh, 1)
 
