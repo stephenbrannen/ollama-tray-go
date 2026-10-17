@@ -15,13 +15,6 @@ linters:
     - contextcheck
     - testifylint
     - exhaustive
-  exclusions:
-    rules:
-      # These tests are being rewritten in a separate change. Remove this rule
-      # once that change lands and fix the testifylint hits it hides.
-      - path: (cmd/ollama-tray/main_test|internal/ollama/host_test)\.go
-        linters:
-          - testifylint
 formatters:
   enable:
     - gofumpt
