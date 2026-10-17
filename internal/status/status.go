@@ -35,8 +35,8 @@ func (s Status) String() string {
 }
 
 // From maps the result of LoadedModels to a Status. Any error counts as
-// Unreachable, because a server that answers with an error cannot be asked to
-// unload anything either.
+// Unreachable, including an error status or an unreadable reply, because the
+// tray then cannot tell which models are loaded.
 func From(models []ollama.LoadedModel, err error) Status {
 	switch {
 	case err != nil:
