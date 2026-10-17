@@ -8,7 +8,17 @@ A Linux system tray icon that shows which models an Ollama server has loaded, an
 * Grey: the server answers but nothing is loaded, or the first check has not returned yet.
 * Red: the server cannot be reached, answers with an error, or sends a reply the tray cannot read.
 
-Hover over the icon to see the server address, each loaded model with its VRAM use, and the last failed stop. A failed stop leaves the tooltip after 60 seconds.
+Hover over the icon to see the server address, each loaded model with its VRAM use and the time until the server unloads it, and the last failed stop. A failed stop leaves the tooltip after 60 seconds.
+
+## Keeping models loaded
+
+The server unloads an idle model after its keep-alive time, 5 minutes by default. To keep models loaded longer, set `OLLAMA_KEEP_ALIVE` on the server. On NixOS:
+
+```nix
+services.ollama.environmentVariables.OLLAMA_KEEP_ALIVE = "24h";
+```
+
+The tooltip shows when each model unloads on its own, for example `llama3:8b (4.7 GB VRAM, unloads in 3h 12m)`. The time rounds down to whole minutes. A model kept loaded forever (keep-alive `-1`) shows `kept loaded`. The tooltip shows no time when the server sends none or sends one the tray cannot read.
 
 ## Menu
 

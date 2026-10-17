@@ -80,12 +80,18 @@ func TestTrayFollowsARealServer(t *testing.T) {
 	t.Logf("ToolTip as the tray sends it: %#v", tip)
 	assertIconColor(t, tray, grey)
 
-	require.NoError(t, server.load(ctx, model))
-	tip = waitUntil(t, "the model in the tooltip", updateTimeout, tray.toolTip, func(tip toolTip) bool {
-		return strings.Contains(tip.Title, model)
+	require.NoError(t, server.load(ctx, model, "10m"))
+	// The tray rounds the time left down, so a poll a moment after the load shows 9m.
+	tip = waitUntil(t, "the time left of a 10 minute keep-alive", updateTimeout, tray.toolTip, func(tip toolTip) bool {
+		return strings.Contains(tip.Title, "unloads in 9m)") || strings.Contains(tip.Title, "unloads in 10m)")
 	})
 	assert.True(t, strings.HasPrefix(tip.Title, host+"\n"+model+" ("), tip.Title)
 	assertIconColor(t, tray, green)
+
+	require.NoError(t, server.load(ctx, model, -1))
+	waitUntil(t, "kept loaded for a keep-alive of -1", updateTimeout, tray.toolTip, func(tip toolTip) bool {
+		return strings.Contains(tip.Title, ", kept loaded)")
+	})
 
 	stopLabel := "Stop " + model
 	items := waitUntil(t, "a visible Stop item", updateTimeout, tray.visibleItems, func(labels map[string]int32) bool {

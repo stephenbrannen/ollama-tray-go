@@ -20,6 +20,11 @@ const (
 	// StopFailureTTL is how long a failed stop stays in the tooltip.
 	StopFailureTTL = 60 * time.Second
 
+	// keptLoadedAfter separates a model kept forever from one with a long
+	// keep-alive. For keep-alive -1 the server reports a time about 290 years
+	// away (the year 2319 when checked), not a special value.
+	keptLoadedAfter = 100 * 365 * 24 * time.Hour
+
 	maxNameRunes  = 64
 	maxErrorRunes = 200
 )
@@ -56,7 +61,7 @@ func LayoutFor(models []ollama.LoadedModel) Layout {
 }
 
 // Tooltip describes the server address, each loaded model with its VRAM in
-// GB, and the last failed stop while it is less than StopFailureTTL old.
+// GB and the time until it unloads, and the last failed stop while it is less than StopFailureTTL old.
 func Tooltip(host string, models []ollama.LoadedModel, pollErr error, stop StopFailure, now time.Time) string {
 	var b strings.Builder
 	b.WriteString(host)
@@ -67,13 +72,39 @@ func Tooltip(host string, models []ollama.LoadedModel, pollErr error, stop StopF
 		b.WriteString("\nno model loaded")
 	default:
 		for _, m := range models {
-			fmt.Fprintf(&b, "\n%s (%.1f GB VRAM)", clean(m.Name, maxNameRunes), float64(m.SizeVRAM)/1e9)
+			fmt.Fprintf(&b, "\n%s (%.1f GB VRAM", clean(m.Name, maxNameRunes), float64(m.SizeVRAM)/1e9)
+			if text := unloadText(m.ExpiresAt, now); text != "" {
+				b.WriteString(", " + text)
+			}
+			b.WriteString(")")
 		}
 	}
 	if stop.Err != nil && now.Sub(stop.At) < StopFailureTTL {
 		fmt.Fprintf(&b, "\nstop failed: %s", clean(stop.Err.Error(), maxErrorRunes))
 	}
 	return b.String()
+}
+
+// unloadText says when the server unloads a model on its own. It is empty
+// when the time is unknown, so the tooltip shows nothing it cannot back up.
+func unloadText(expiresAt, now time.Time) string {
+	if expiresAt.IsZero() {
+		return ""
+	}
+	left := expiresAt.Sub(now)
+	switch {
+	case left > keptLoadedAfter:
+		return "kept loaded"
+	case left < time.Minute:
+		return "unloads in <1m"
+	case left < time.Hour:
+		return fmt.Sprintf("unloads in %dm", int(left.Minutes()))
+	}
+	hours, minutes := int(left.Hours()), int(left.Minutes())%60
+	if minutes == 0 {
+		return fmt.Sprintf("unloads in %dh", hours)
+	}
+	return fmt.Sprintf("unloads in %dh %dm", hours, minutes)
 }
 
 // CheckingTooltip is the tooltip before the first poll returns.
