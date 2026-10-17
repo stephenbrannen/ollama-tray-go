@@ -18,9 +18,6 @@ import (
 	"github.com/stephenbrannen/ollama-tray-go/internal/status"
 )
 
-// requestTimeout bounds each status and unload call.
-const requestTimeout = 2 * time.Second
-
 // Server is the part of the Ollama client the tray uses.
 type Server interface {
 	LoadedModels(ctx context.Context) ([]ollama.LoadedModel, error)
@@ -118,9 +115,7 @@ func (a *app) poll(ctx context.Context) {
 }
 
 func (a *app) pollOnce(ctx context.Context) {
-	callCtx, cancel := context.WithTimeout(ctx, requestTimeout)
-	defer cancel()
-	models, err := a.cfg.Client.LoadedModels(callCtx)
+	models, err := a.cfg.Client.LoadedModels(ctx)
 
 	layout := menu.LayoutFor(models)
 	a.mu.Lock()
@@ -172,11 +167,9 @@ func (a *app) stopEveryModel(ctx context.Context) {
 func (a *app) unload(ctx context.Context, names ...string) {
 	var errs []error
 	for _, name := range names {
-		callCtx, cancel := context.WithTimeout(ctx, requestTimeout)
-		if err := a.cfg.Client.Unload(callCtx, name); err != nil {
+		if err := a.cfg.Client.Unload(ctx, name); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", name, err))
 		}
-		cancel()
 	}
 	err := errors.Join(errs...)
 	if err != nil {
