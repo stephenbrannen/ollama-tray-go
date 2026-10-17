@@ -2,6 +2,7 @@ package icon_test
 
 import (
 	"bytes"
+	"image/color"
 	"image/png"
 	"testing"
 
@@ -48,4 +49,28 @@ func TestPNGDiffersPerState(t *testing.T) {
 func TestPNGUnknownStateFallsBackToUnreachable(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, icon.PNG(status.Unreachable), icon.PNG(status.Status(99)))
+}
+
+func TestPNGColors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		state status.Status
+		want  color.RGBA
+	}{
+		{status.Loaded, color.RGBA{R: 0x2e, G: 0xa0, B: 0x43, A: 0xff}},
+		{status.Idle, color.RGBA{R: 0x8b, G: 0x94, B: 0x9e, A: 0xff}},
+		{status.Checking, color.RGBA{R: 0x8b, G: 0x94, B: 0x9e, A: 0xff}},
+		{status.Unreachable, color.RGBA{R: 0xd7, G: 0x3a, B: 0x49, A: 0xff}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.state.String(), func(t *testing.T) {
+			t.Parallel()
+			img, err := png.Decode(bytes.NewReader(icon.PNG(tt.state)))
+			require.NoError(t, err)
+
+			b := img.Bounds()
+			assert.Equal(t, tt.want, color.RGBAModel.Convert(img.At(b.Dx()/2, b.Dy()/2)))
+		})
+	}
 }

@@ -38,14 +38,14 @@ func (u *systrayUI) SetStopAllVisible(visible bool) {
 // Run shows the tray icon and blocks until the user quits or ctx is cancelled.
 func Run(ctx context.Context, cfg Config) {
 	a := newApp(cfg)
-	systray.Run(func() { a.onReady(ctx) }, func() {})
+	systray.Run(func() { a.onReady(ctx) }, nil)
 }
 
 func (a *app) onReady(ctx context.Context) {
 	u := &systrayUI{}
-	u.SetIcon(status.Unreachable)
+	u.SetIcon(status.Checking)
 	systray.SetTitle("Ollama")
-	u.SetTooltip(a.cfg.Host)
+	u.SetTooltip(menu.CheckingTooltip(a.cfg.Host))
 
 	for i := range u.items {
 		u.items[i] = systray.AddMenuItem("", "")

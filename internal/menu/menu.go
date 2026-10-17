@@ -5,6 +5,8 @@ package menu
 import (
 	"fmt"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/stephenbrannen/ollama-tray-go/internal/ollama"
 )
@@ -13,6 +15,21 @@ import (
 // fyne.io/systray cannot remove items, so the tray builds a fixed pool and
 // hides the unused ones. Models past the pool are still reachable with "Stop all".
 const PoolSize = 8
+
+const (
+	// StopFailureTTL is how long a failed stop stays in the tooltip.
+	StopFailureTTL = 60 * time.Second
+
+	maxNameRunes  = 64
+	maxErrorRunes = 200
+)
+
+// StopFailure is the last failed stop and when it happened. The zero value
+// means no failure.
+type StopFailure struct {
+	Err error
+	At  time.Time
+}
 
 // Item is one slot in the model pool.
 type Item struct {
@@ -32,15 +49,15 @@ type Layout struct {
 func LayoutFor(models []ollama.LoadedModel) Layout {
 	var l Layout
 	for i := range min(len(models), PoolSize) {
-		l.Items[i] = Item{Visible: true, Label: "Stop " + models[i].Name, Model: models[i].Name}
+		l.Items[i] = Item{Visible: true, Label: "Stop " + clean(models[i].Name, maxNameRunes), Model: models[i].Name}
 	}
 	l.StopAllVisible = len(models) > 1
 	return l
 }
 
 // Tooltip describes the server address, each loaded model with its VRAM in
-// GB, and the last failed stop, if any.
-func Tooltip(host string, models []ollama.LoadedModel, pollErr, stopErr error) string {
+// GB, and the last failed stop while it is less than StopFailureTTL old.
+func Tooltip(host string, models []ollama.LoadedModel, pollErr error, stop StopFailure, now time.Time) string {
 	var b strings.Builder
 	b.WriteString(host)
 	switch {
@@ -50,11 +67,35 @@ func Tooltip(host string, models []ollama.LoadedModel, pollErr, stopErr error) s
 		b.WriteString("\nno model loaded")
 	default:
 		for _, m := range models {
-			fmt.Fprintf(&b, "\n%s (%.1f GB VRAM)", m.Name, float64(m.SizeVRAM)/1e9)
+			fmt.Fprintf(&b, "\n%s (%.1f GB VRAM)", clean(m.Name, maxNameRunes), float64(m.SizeVRAM)/1e9)
 		}
 	}
-	if stopErr != nil {
-		fmt.Fprintf(&b, "\nstop failed: %v", stopErr)
+	if stop.Err != nil && now.Sub(stop.At) < StopFailureTTL {
+		fmt.Fprintf(&b, "\nstop failed: %s", clean(stop.Err.Error(), maxErrorRunes))
 	}
 	return b.String()
+}
+
+// CheckingTooltip is the tooltip before the first poll returns.
+func CheckingTooltip(host string) string {
+	return host + "\nchecking"
+}
+
+// clean makes text from the server safe for a tooltip or menu label. A model
+// name or error message can hold newlines or terminal escape sequences, and
+// the tray shows them as given. Control and invisible format characters
+// become spaces, and text past limit characters is cut.
+func clean(s string, limit int) string {
+	s = strings.ToValidUTF8(s, "")
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return ' '
+		}
+		return r
+	}, s)
+	s = strings.Join(strings.Fields(s), " ")
+	if runes := []rune(s); len(runes) > limit {
+		return string(runes[:limit-1]) + "…"
+	}
+	return s
 }

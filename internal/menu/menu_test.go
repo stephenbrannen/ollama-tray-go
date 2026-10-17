@@ -3,7 +3,9 @@ package menu_test
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -29,6 +31,14 @@ func visible(l menu.Layout) []string {
 	return labels
 }
 
+func stops(names []string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = "Stop " + n
+	}
+	return out
+}
+
 func TestLayoutFor(t *testing.T) {
 	t.Parallel()
 
@@ -46,13 +56,10 @@ func TestLayoutFor(t *testing.T) {
 		{"none", nil, nil, false},
 		{"one", models("a"), []string{"Stop a"}, false},
 		{"three", models("a", "b", "c"), []string{"Stop a", "Stop b", "Stop c"}, true},
-		{"more than the pool", models(many...), func() []string {
-			out := make([]string, menu.PoolSize)
-			for i := range out {
-				out[i] = "Stop " + many[i]
-			}
-			return out
-		}(), true},
+		{"exactly the pool", models(many[:menu.PoolSize]...), stops(many[:menu.PoolSize]), true},
+		{"one past the pool", models(many[:menu.PoolSize+1]...), stops(many[:menu.PoolSize]), true},
+		{"more than the pool", models(many...), stops(many[:menu.PoolSize]), true},
+		{"unsafe name", models("a\nb\x1b[31m"), []string{"Stop a b [31m"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,28 +87,75 @@ func TestLayoutForShrinkingHidesTrailingItems(t *testing.T) {
 func TestTooltip(t *testing.T) {
 	t.Parallel()
 
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	failedAt := func(ago time.Duration) menu.StopFailure {
+		return menu.StopFailure{Err: errors.New("boom"), At: now.Add(-ago)}
+	}
 	tests := []struct {
 		name    string
 		models  []ollama.LoadedModel
 		pollErr error
-		stopErr error
+		stop    menu.StopFailure
 		want    string
 	}{
 		{
-			"loaded", models("llama3", "qwen"), nil, nil,
+			"loaded", models("llama3", "qwen"), nil,
+			menu.StopFailure{},
 			"http://h:11434\nllama3 (4.5 GB VRAM)\nqwen (4.5 GB VRAM)",
 		},
-		{"idle", nil, nil, nil, "http://h:11434\nno model loaded"},
-		{"unreachable", nil, ollama.ErrUnavailable, nil, "http://h:11434\nunreachable"},
+		{"idle", nil, nil, menu.StopFailure{}, "http://h:11434\nno model loaded"},
+		{"unreachable", nil, ollama.ErrUnavailable, menu.StopFailure{}, "http://h:11434\nunreachable"},
 		{
-			"stop failed", models("a"), nil, errors.New("boom"),
+			"fresh stop failure", models("a"), nil, failedAt(time.Second),
 			"http://h:11434\na (4.5 GB VRAM)\nstop failed: boom",
+		},
+		{
+			"stop failure just inside the limit", nil, nil, failedAt(menu.StopFailureTTL - time.Nanosecond),
+			"http://h:11434\nno model loaded\nstop failed: boom",
+		},
+		{
+			"stop failure at the limit", models("a"), nil, failedAt(menu.StopFailureTTL),
+			"http://h:11434\na (4.5 GB VRAM)",
+		},
+		{
+			"expired stop failure", models("a"), nil, failedAt(time.Hour),
+			"http://h:11434\na (4.5 GB VRAM)",
+		},
+		{
+			"joined stop errors on one line", nil, nil,
+			menu.StopFailure{Err: errors.Join(errors.New("a: boom"), errors.New("c: boom")), At: now},
+			"http://h:11434\nno model loaded\nstop failed: a: boom c: boom",
+		},
+		{
+			"unsafe model name", models("evil\nstop failed: x\x07"), nil,
+			menu.StopFailure{},
+			"http://h:11434\nevil stop failed: x (4.5 GB VRAM)",
+		},
+		{
+			"long model name is cut", models(strings.Repeat("m", 100)), nil,
+			menu.StopFailure{},
+			"http://h:11434\n" + strings.Repeat("m", 63) + "\u2026 (4.5 GB VRAM)",
+		},
+		{
+			"long error is cut", nil, nil,
+			menu.StopFailure{Err: errors.New(strings.Repeat("e", 300)), At: now},
+			"http://h:11434\nno model loaded\nstop failed: " + strings.Repeat("e", 199) + "\u2026",
+		},
+		{
+			"invalid utf-8 is dropped", models("a\xffb"), nil,
+			menu.StopFailure{},
+			"http://h:11434\nab (4.5 GB VRAM)",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, menu.Tooltip("http://h:11434", tt.models, tt.pollErr, tt.stopErr))
+			assert.Equal(t, tt.want, menu.Tooltip("http://h:11434", tt.models, tt.pollErr, tt.stop, now))
 		})
 	}
+}
+
+func TestCheckingTooltip(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "http://h:11434\nchecking", menu.CheckingTooltip("http://h:11434"))
 }

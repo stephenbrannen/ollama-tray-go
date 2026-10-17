@@ -29,6 +29,7 @@ func PNG(s status.Status) []byte {
 		cache = map[status.Status][]byte{
 			status.Loaded:      draw(green),
 			status.Idle:        draw(grey),
+			status.Checking:    draw(grey),
 			status.Unreachable: draw(red),
 		}
 	})

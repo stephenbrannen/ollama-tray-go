@@ -311,7 +311,7 @@ func TestUnloadRunsConcurrentlyUpToTheLimit(t *testing.T) {
 			a.unload(ctx, names...)
 
 			assert.Equal(t, tt.wantPeak, peak)
-			assert.NoError(t, a.stopErr)
+			assert.NoError(t, a.stop.Err)
 		})
 	}
 }
@@ -329,13 +329,49 @@ func TestUnloadReportsEveryFailureAndClearsItOnSuccess(t *testing.T) {
 	a.unload(t.Context(), "a", "b", "c")
 	a.pollOnce(t.Context())
 
-	require.EqualError(t, a.stopErr, "a: boom\nc: boom")
-	assert.Contains(t, fu.take(), "tooltip:host\nno model loaded\nstop failed: a: boom\nc: boom")
+	require.EqualError(t, a.stop.Err, "a: boom\nc: boom")
+	assert.Contains(t, fu.take(), "tooltip:host\nno model loaded\nstop failed: a: boom c: boom")
 	assert.Len(t, a.refresh, 1)
 
 	a.unload(t.Context(), "b")
 
-	assert.NoError(t, a.stopErr)
+	assert.NoError(t, a.stop.Err)
+}
+
+func TestStopFailureExpiresAfterTheTimeToLive(t *testing.T) {
+	t.Parallel()
+	srv := &fakeServer{onUnload: func(context.Context, string) error { return errors.New("boom") }}
+	a, fu := newTestApp(srv)
+	clock := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	a.now = func() time.Time { return clock }
+
+	a.unload(t.Context(), "a")
+	clock = clock.Add(menu.StopFailureTTL - time.Second)
+	a.pollOnce(t.Context())
+	assert.Contains(t, fu.take(), "tooltip:host\nno model loaded\nstop failed: a: boom")
+
+	clock = clock.Add(2 * time.Second)
+	a.pollOnce(t.Context())
+	assert.Equal(t, []string{"tooltip:host\nno model loaded"}, fu.take())
+}
+
+func TestStopAttemptClearsTheLastFailureBeforeItFinishes(t *testing.T) {
+	t.Parallel()
+	srv := &fakeServer{}
+	a, _ := newTestApp(srv)
+	a.stop = menu.StopFailure{Err: errors.New("old"), At: a.now()}
+	var seen error
+	srv.onUnload = func(context.Context, string) error {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		seen = a.stop.Err
+		return errors.New("new")
+	}
+
+	a.unload(t.Context(), "a")
+
+	require.NoError(t, seen)
+	assert.EqualError(t, a.stop.Err, "a: new")
 }
 
 func TestWatchRunsOnClickPerClickUntilContextEnds(t *testing.T) {

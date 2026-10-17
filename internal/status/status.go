@@ -13,6 +13,9 @@ const (
 	Idle
 	// Loaded means at least one model is loaded.
 	Loaded
+	// Checking means the first poll has not returned yet. The tray starts
+	// here so it does not claim the server is down before it has asked.
+	Checking
 )
 
 // String returns a lowercase name for logs and test failures.
@@ -22,6 +25,8 @@ func (s Status) String() string {
 		return "loaded"
 	case Idle:
 		return "idle"
+	case Checking:
+		return "checking"
 	case Unreachable:
 		fallthrough
 	default:

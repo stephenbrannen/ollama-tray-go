@@ -34,3 +34,24 @@ func TestFrom(t *testing.T) {
 		})
 	}
 }
+
+func TestString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		status status.Status
+		want   string
+	}{
+		{status.Loaded, "loaded"},
+		{status.Idle, "idle"},
+		{status.Unreachable, "unreachable"},
+		{status.Checking, "checking"},
+		{status.Status(99), "unreachable"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.status.String())
+		})
+	}
+}
