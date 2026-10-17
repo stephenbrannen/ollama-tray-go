@@ -5,6 +5,7 @@ go 1.26
 require (
 	fyne.io/systray v1.12.2
 	github.com/stretchr/testify v1.12.1
+	golang.org/x/sync v0.22.0
 )
 
 require (
