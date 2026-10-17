@@ -60,15 +60,17 @@ type app struct {
 	ui      ui
 	refresh chan struct{}
 	stops   chan []string
+	// now is the clock; tests replace it to expire a stop failure without waiting.
+	now func() time.Time
 
 	// last is read and written only by the poll goroutine.
 	last    applied
 	hasLast bool
 
-	mu      sync.Mutex
-	models  []ollama.LoadedModel
-	layout  menu.Layout
-	stopErr error
+	mu     sync.Mutex
+	models []ollama.LoadedModel
+	layout menu.Layout
+	stop   menu.StopFailure
 }
 
 func newApp(cfg Config) *app {
@@ -76,6 +78,7 @@ func newApp(cfg Config) *app {
 		cfg:     cfg,
 		refresh: make(chan struct{}, 1),
 		stops:   make(chan []string, stopQueueSize),
+		now:     time.Now,
 	}
 }
 
@@ -122,12 +125,12 @@ func (a *app) pollOnce(ctx context.Context) {
 	a.mu.Lock()
 	a.models = models
 	a.layout = layout
-	stopErr := a.stopErr
+	stop := a.stop
 	a.mu.Unlock()
 
 	a.apply(applied{
 		status:  status.From(models, err),
-		tooltip: menu.Tooltip(a.cfg.Host, models, err, stopErr),
+		tooltip: menu.Tooltip(a.cfg.Host, models, err, stop, a.now()),
 		layout:  layout,
 	})
 }
@@ -212,6 +215,11 @@ func (a *app) runStops(ctx context.Context) {
 // unload unloads names concurrently, so "Stop all" takes about one unload
 // timeout instead of one per model.
 func (a *app) unload(ctx context.Context, names ...string) {
+	// A new attempt replaces the last failure, even before it finishes.
+	a.mu.Lock()
+	a.stop = menu.StopFailure{}
+	a.mu.Unlock()
+
 	// Each goroutine writes only its own element, so no lock is needed.
 	errs := make([]error, len(names))
 	var group errgroup.Group
@@ -232,7 +240,9 @@ func (a *app) unload(ctx context.Context, names ...string) {
 	}
 
 	a.mu.Lock()
-	a.stopErr = err
+	if err != nil {
+		a.stop = menu.StopFailure{Err: err, At: a.now()}
+	}
 	a.mu.Unlock()
 	a.requestRefresh()
 }
