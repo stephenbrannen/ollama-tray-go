@@ -51,7 +51,8 @@ An invalid flag, host or interval prints an error to stderr and exits with 2.
 * `internal/icon` draws the icons at runtime.
 * `internal/tray` connects those pieces to the system tray and runs the poll loop.
 * `internal/version` holds the build version.
-* `tasks` holds the coverage gate program.
+* `tasks` holds the coverage gate program, and `tasks/e2e` runs the end-to-end test.
+* `e2e` holds the end-to-end test and its Docker setup.
 
 ## Install on NixOS
 
@@ -110,6 +111,16 @@ The package installs `ollama-tray.desktop` under `share/applications`. To start 
 * `go run -tags task ./tasks/coverage.go` runs `go test -race -count=1 ./...` and fails below 80% statement coverage. The count leaves out `cmd/ollama-tray` and `internal/tray`, which are startup and tray wiring. `go test -tags task ./tasks/` tests that program.
 * `GOOS=linux CGO_ENABLED=0 go build ./...` checks the Linux build.
 * `nix fmt` formats `flake.nix`. `nix build` builds the package and `nix flake check` also runs every package's tests.
+
+### End-to-end test
+
+```sh
+go run -tags task ./tasks/e2e
+```
+
+This needs Docker with Compose. It starts a real Ollama server and a test container with a session D-Bus and a stub tray host (a StatusNotifierWatcher). The test runs the tray binary and reads its icon, tooltip and menu over D-Bus the way a desktop panel does. It loads a model, clicks `Stop <model>`, and checks that Ollama unloads it within 0.5 seconds. Then it closes the TCP proxy between the tray and Ollama to check the red unreachable state. The first run downloads `smollm2:135m` into a Docker volume, and later runs reuse it. Arguments after the command go to the test binary, for example `-test.run`.
+
+The test is behind the `e2e` build tag, so `go test ./...` and the coverage gate do not run it. CI runs it in the `e2e` workflow.
 
 ### Update `vendorHash`
 
