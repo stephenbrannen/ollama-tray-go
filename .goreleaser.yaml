@@ -22,6 +22,9 @@ archives:
       - src: README.md
         info:
           mtime: '{{ .CommitDate }}'
+      - src: LICENSE
+        info:
+          mtime: '{{ .CommitDate }}'
       - src: ollama-tray.desktop
         info:
           mtime: '{{ .CommitDate }}'

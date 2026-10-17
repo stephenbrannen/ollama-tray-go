@@ -67,8 +67,17 @@ The package installs `ollama-tray.desktop` under `share/applications`. To start 
 
 ## Development
 
-* `nix develop` provides go, gopls, golangci-lint, and pre-commit (x86_64-linux and aarch64-linux).
-* `pre-commit install` enables the gofmt, go vet, and golangci-lint hooks.
-* `go test -race -count=1 ./...` runs the tests.
+* `nix develop` provides go and gopls (x86_64-linux and aarch64-linux). golangci-lint and govulncheck are `tool` directives in `go.mod`, so run them as `go tool golangci-lint` and `go tool govulncheck`.
+* `git config core.hooksPath .githooks` enables the hooks. `pre-commit` runs gofmt, `go mod tidy -diff`, `go vet`, golangci-lint, and govulncheck. `pre-push` runs the tests.
+* `go run -tags task ./tasks/coverage.go` runs `go test -race -count=1 ./...` and fails below 80% statement coverage. The count leaves out `cmd/ollama-tray` and `internal/tray`, which are startup and tray wiring.
 * `GOOS=linux CGO_ENABLED=0 go build ./...` checks the Linux build.
-* `nix build` builds the package. After any change to `go.mod` or `go.sum`, set `vendorHash` in `flake.nix` to `pkgs.lib.fakeHash`, run `nix build`, and paste the hash from the error.
+* `nix fmt` formats `flake.nix`. `nix build` builds the package and `nix flake check` also runs every package's tests.
+
+### Update `vendorHash`
+
+After any change to `go.mod` or `go.sum`, including Dependabot `gomod` pull requests, `nix build` fails with a hash mismatch until `vendorHash` in `flake.nix` matches.
+
+* Set `vendorHash` to `pkgs.lib.fakeHash` and run `nix build`.
+* Copy the hash after `got:` in the error into `flake.nix`.
+* Commit it to the same branch. For a Dependabot pull request, push to its branch (`gh pr checkout <number>`).
+* The `nix` CI job prints a reminder when it fails.

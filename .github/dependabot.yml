@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # A release pulled within a day or two never reaches a bump PR.
+    cooldown:
+      default-days: 2
+  # A gomod bump changes go.sum, so nix build fails until vendorHash in
+  # flake.nix is updated. The README's Development section has the steps.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 2
