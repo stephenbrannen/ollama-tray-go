@@ -31,6 +31,14 @@ func visible(l menu.Layout) []string {
 	return labels
 }
 
+func stops(names []string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = "Stop " + n
+	}
+	return out
+}
+
 func TestLayoutFor(t *testing.T) {
 	t.Parallel()
 
@@ -46,12 +54,12 @@ func TestLayoutFor(t *testing.T) {
 		wantStopAll bool
 	}{
 		{"none", nil, nil, false},
-		{"one", models("a"), []string{"a"}, false},
-		{"three", models("a", "b", "c"), []string{"a", "b", "c"}, true},
-		{"exactly the pool", models(many[:menu.PoolSize]...), many[:menu.PoolSize], true},
-		{"one past the pool", models(many[:menu.PoolSize+1]...), many[:menu.PoolSize], true},
-		{"more than the pool", models(many...), many[:menu.PoolSize], true},
-		{"unsafe name", models("a\nb\x1b[31m"), []string{"a b [31m"}, false},
+		{"one", models("a"), []string{"Stop a"}, false},
+		{"three", models("a", "b", "c"), []string{"Stop a", "Stop b", "Stop c"}, true},
+		{"exactly the pool", models(many[:menu.PoolSize]...), stops(many[:menu.PoolSize]), true},
+		{"one past the pool", models(many[:menu.PoolSize+1]...), stops(many[:menu.PoolSize]), true},
+		{"more than the pool", models(many...), stops(many[:menu.PoolSize]), true},
+		{"unsafe name", models("a\nb\x1b[31m"), []string{"Stop a b [31m"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -81,8 +89,32 @@ func TestLayoutForOffersKeepLoadedUnlessAlreadyKept(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			loaded := []ollama.LoadedModel{{Name: "a", ExpiresAt: tt.expiresAt}}
-			item := menu.LayoutFor(loaded, now).Items[0]
-			assert.Equal(t, tt.want, item.KeepLoadedVisible)
+			layout := menu.LayoutFor(loaded, now)
+			assert.Equal(t, tt.want, layout.Items[0].KeepLoadedVisible)
+			assert.Equal(t, tt.want, layout.KeepLoadedVisible)
+			assert.Equal(t, "a", layout.Items[0].KeepLabel)
+		})
+	}
+}
+
+func TestLayoutForKeepLoadedSubmenuShowsWhileAnyModelCanBeKept(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	forever := time.Date(2319, 1, 27, 2, 29, 9, 0, time.UTC)
+	tests := []struct {
+		name   string
+		models []ollama.LoadedModel
+		want   bool
+	}{
+		{"no model", nil, false},
+		{"one kept, one not", []ollama.LoadedModel{{Name: "a", ExpiresAt: forever}, {Name: "b"}}, true},
+		{"all kept", []ollama.LoadedModel{{Name: "a", ExpiresAt: forever}, {Name: "b", ExpiresAt: forever}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, menu.LayoutFor(tt.models, now).KeepLoadedVisible)
 		})
 	}
 }
@@ -94,7 +126,7 @@ func TestLayoutForShrinkingHidesTrailingItems(t *testing.T) {
 	one := menu.LayoutFor(models("a"), time.Time{})
 
 	assert.Len(t, visible(three), 3)
-	assert.Equal(t, []string{"a"}, visible(one))
+	assert.Equal(t, []string{"Stop a"}, visible(one))
 	assert.False(t, one.Items[1].Visible)
 	assert.Empty(t, one.Items[1].Model, "a hidden slot must not keep a stale model name")
 	assert.False(t, one.StopAllVisible)

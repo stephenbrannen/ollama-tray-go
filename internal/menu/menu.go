@@ -11,16 +11,14 @@ import (
 	"github.com/stephenbrannen/ollama-tray-go/internal/ollama"
 )
 
-// PoolSize is how many model submenus the tray creates up front.
+// PoolSize is how many "Stop <model>" items, and how many "Keep loaded"
+// submenu entries, the tray creates up front.
 // fyne.io/systray cannot remove items, so the tray builds a fixed pool and
 // hides the unused ones. Models past the pool are still reachable with "Stop all".
 const PoolSize = 8
 
-// Labels of the two actions in each model submenu.
-const (
-	StopLabel       = "Stop"
-	KeepLoadedLabel = "Keep loaded"
-)
+// KeepLoadedMenuLabel titles the submenu that lists the models that can be kept loaded.
+const KeepLoadedMenuLabel = "Keep loaded"
 
 const (
 	// ActionFailureTTL is how long a failed action stays in the tooltip.
@@ -46,10 +44,12 @@ type ActionFailure struct {
 // Item is one slot in the model pool.
 type Item struct {
 	Visible bool
-	// Label is the submenu title, the model name.
+	// Label is the "Stop <model>" title.
 	Label string
-	// Model is the name the submenu actions apply to; empty for a hidden slot.
+	// Model is the name the item's actions apply to; empty for a hidden slot.
 	Model string
+	// KeepLabel is the title of the model's entry in the "Keep loaded" submenu.
+	KeepLabel string
 	// KeepLoadedVisible is false once the server already keeps the model forever.
 	KeepLoadedVisible bool
 }
@@ -58,6 +58,9 @@ type Item struct {
 type Layout struct {
 	Items          [PoolSize]Item
 	StopAllVisible bool
+	// KeepLoadedVisible is false when no model can be kept, so the submenu
+	// never opens empty.
+	KeepLoadedVisible bool
 }
 
 // LayoutFor returns which pool items and "Stop all" show for the loaded models.
@@ -66,10 +69,12 @@ func LayoutFor(models []ollama.LoadedModel, now time.Time) Layout {
 	for i := range min(len(models), PoolSize) {
 		l.Items[i] = Item{
 			Visible:           true,
-			Label:             clean(models[i].Name, maxNameRunes),
+			Label:             "Stop " + clean(models[i].Name, maxNameRunes),
 			Model:             models[i].Name,
+			KeepLabel:         clean(models[i].Name, maxNameRunes),
 			KeepLoadedVisible: !keptLoaded(models[i].ExpiresAt, now),
 		}
+		l.KeepLoadedVisible = l.KeepLoadedVisible || l.Items[i].KeepLoadedVisible
 	}
 	l.StopAllVisible = len(models) > 1
 	return l

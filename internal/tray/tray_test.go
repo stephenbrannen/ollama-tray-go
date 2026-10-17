@@ -53,13 +53,14 @@ func (f *fakeUI) take() []string {
 	return calls
 }
 
-func (f *fakeUI) SetIcon(s status.Status)     { f.record("icon:%s", s) }
-func (f *fakeUI) SetTooltip(text string)      { f.record("tooltip:%s", text) }
-func (f *fakeUI) HideModel(slot int)          { f.record("hide:%d", slot) }
-func (f *fakeUI) SetStopAllVisible(show bool) { f.record("stopall:%t", show) }
-func (f *fakeUI) ShowModel(slot int, t string, keep bool) {
-	f.record("show:%d:%s:keep=%t", slot, t, keep)
-}
+func (f *fakeUI) SetIcon(s status.Status)           { f.record("icon:%s", s) }
+func (f *fakeUI) SetTooltip(text string)            { f.record("tooltip:%s", text) }
+func (f *fakeUI) HideModel(slot int)                { f.record("hide:%d", slot) }
+func (f *fakeUI) SetStopAllVisible(show bool)       { f.record("stopall:%t", show) }
+func (f *fakeUI) ShowModel(slot int, t string)      { f.record("show:%d:%s", slot, t) }
+func (f *fakeUI) ShowKeepLoaded(slot int, t string) { f.record("showkeep:%d:%s", slot, t) }
+func (f *fakeUI) HideKeepLoaded(slot int)           { f.record("hidekeep:%d", slot) }
+func (f *fakeUI) SetKeepLoadedVisible(show bool)    { f.record("keepmenu:%t", show) }
 
 type fakeServer struct {
 	mu     sync.Mutex
@@ -159,7 +160,7 @@ func TestPollOnceSendsOnlyChanges(t *testing.T) {
 	hidden := func(from int) []string {
 		var out []string
 		for i := from; i < menu.PoolSize; i++ {
-			out = append(out, fmt.Sprintf("hide:%d", i))
+			out = append(out, fmt.Sprintf("hide:%d", i), fmt.Sprintf("hidekeep:%d", i))
 		}
 		return out
 	}
@@ -173,24 +174,26 @@ func TestPollOnceSendsOnlyChanges(t *testing.T) {
 			name:   "first poll applies everything",
 			models: loaded("a"),
 			want: append(append([]string{
-				"icon:loaded", "tooltip:host\na (4.5 GB VRAM)", "show:0:a:keep=true",
-			}, hidden(1)...), "stopall:false"),
+				"icon:loaded", "tooltip:host\na (4.5 GB VRAM)", "show:0:Stop a", "showkeep:0:a",
+			}, hidden(1)...), "keepmenu:true", "stopall:false"),
 		},
 		{name: "same state sends nothing", models: loaded("a"), want: nil},
 		{
 			name:   "second model adds one item and stop all",
 			models: loaded("a", "b"),
-			want:   []string{"tooltip:host\na (4.5 GB VRAM)\nb (4.5 GB VRAM)", "show:1:b:keep=true", "stopall:true"},
+			want:   []string{"tooltip:host\na (4.5 GB VRAM)\nb (4.5 GB VRAM)", "show:1:Stop b", "showkeep:1:b", "stopall:true"},
 		},
 		{
 			name:   "renamed model updates only its slot",
 			models: loaded("c", "b"),
-			want:   []string{"tooltip:host\nc (4.5 GB VRAM)\nb (4.5 GB VRAM)", "show:0:c:keep=true"},
+			want:   []string{"tooltip:host\nc (4.5 GB VRAM)\nb (4.5 GB VRAM)", "show:0:Stop c", "showkeep:0:c"},
 		},
 		{
 			name: "server error hides everything",
 			err:  errors.New("down"),
-			want: []string{"icon:unreachable", "tooltip:host\nunreachable", "hide:0", "hide:1", "stopall:false"},
+			want: []string{
+				"icon:unreachable", "tooltip:host\nunreachable", "hide:0", "hidekeep:0", "hide:1", "hidekeep:1", "keepmenu:false", "stopall:false",
+			},
 		},
 		{name: "same error sends nothing", err: errors.New("still down"), want: nil},
 	}
@@ -276,7 +279,7 @@ func TestKeepLoadedClickChangesTheNextPoll(t *testing.T) {
 	a.pollOnce(t.Context())
 
 	assert.Equal(t, []string{"a"}, srv.kept)
-	assert.Equal(t, []string{"tooltip:host\na (4.5 GB VRAM, kept loaded)", "show:0:a:keep=false"}, fu.take())
+	assert.Equal(t, []string{"tooltip:host\na (4.5 GB VRAM, kept loaded)", "hidekeep:0", "keepmenu:false"}, fu.take())
 }
 
 func TestKeepLoadedFailureShowsInTheTooltip(t *testing.T) {

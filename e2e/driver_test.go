@@ -130,7 +130,7 @@ type menuNode struct {
 
 // visibleItems maps the path of each visible menu item to its id. A path is
 // the labels from the top level down, joined by " > ", so a submenu item reads
-// "model > Stop". A hidden item hides its whole submenu.
+// "Keep loaded > model". A hidden item hides its whole submenu.
 func (ti *trayItem) visibleItems() (map[string]int32, error) {
 	menu, err := ti.menu()
 	if err != nil {

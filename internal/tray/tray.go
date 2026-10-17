@@ -37,8 +37,11 @@ type Config struct {
 type ui interface {
 	SetIcon(s status.Status)
 	SetTooltip(text string)
-	ShowModel(slot int, title string, keepLoadedVisible bool)
+	ShowModel(slot int, title string)
 	HideModel(slot int)
+	ShowKeepLoaded(slot int, title string)
+	HideKeepLoaded(slot int)
+	SetKeepLoadedVisible(visible bool)
 	SetStopAllVisible(visible bool)
 }
 
@@ -164,14 +167,25 @@ func (a *app) apply(next applied) {
 		a.ui.SetTooltip(next.tooltip)
 	}
 	for i, it := range next.layout.Items {
-		if !first && prev.layout.Items[i] == it {
-			continue
+		prevItem := prev.layout.Items[i]
+		if first || prevItem.Visible != it.Visible || prevItem.Label != it.Label {
+			if it.Visible {
+				a.ui.ShowModel(i, it.Label)
+			} else {
+				a.ui.HideModel(i)
+			}
 		}
-		if it.Visible {
-			a.ui.ShowModel(i, it.Label, it.KeepLoadedVisible)
-		} else {
-			a.ui.HideModel(i)
+		showKeep, prevShowKeep := it.Visible && it.KeepLoadedVisible, prevItem.Visible && prevItem.KeepLoadedVisible
+		if first || showKeep != prevShowKeep || (showKeep && prevItem.KeepLabel != it.KeepLabel) {
+			if showKeep {
+				a.ui.ShowKeepLoaded(i, it.KeepLabel)
+			} else {
+				a.ui.HideKeepLoaded(i)
+			}
 		}
+	}
+	if first || prev.layout.KeepLoadedVisible != next.layout.KeepLoadedVisible {
+		a.ui.SetKeepLoadedVisible(next.layout.KeepLoadedVisible)
 	}
 	if first || prev.layout.StopAllVisible != next.layout.StopAllVisible {
 		a.ui.SetStopAllVisible(next.layout.StopAllVisible)

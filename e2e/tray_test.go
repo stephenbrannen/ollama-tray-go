@@ -90,8 +90,8 @@ func TestTrayFollowsARealServer(t *testing.T) {
 	assert.True(t, strings.HasPrefix(tip.Title, host+"\n"+model+" ("), tip.Title)
 	assertIconColor(t, tray, green)
 
-	keepLabel := model + " > " + menu.KeepLoadedLabel
-	items := waitUntil(t, "a visible Keep loaded item", updateTimeout, tray.visibleItems, func(paths map[string]int32) bool {
+	keepLabel := menu.KeepLoadedMenuLabel + " > " + model
+	items := waitUntil(t, "the model in the Keep loaded submenu", updateTimeout, tray.visibleItems, func(paths map[string]int32) bool {
 		_, ok := paths[keepLabel]
 		return ok
 	})
@@ -99,12 +99,13 @@ func TestTrayFollowsARealServer(t *testing.T) {
 	waitUntil(t, "kept loaded after the click", updateTimeout, tray.toolTip, func(tip toolTip) bool {
 		return strings.Contains(tip.Title, ", kept loaded)")
 	})
-	items = waitUntil(t, "Keep loaded to leave the menu", updateTimeout, tray.visibleItems, func(paths map[string]int32) bool {
-		_, ok := paths[keepLabel]
-		return !ok
+	items = waitUntil(t, "the Keep loaded submenu to leave the menu", updateTimeout, tray.visibleItems, func(paths map[string]int32) bool {
+		_, entry := paths[keepLabel]
+		_, submenu := paths[menu.KeepLoadedMenuLabel]
+		return !entry && !submenu
 	})
 
-	stopLabel := model + " > " + menu.StopLabel
+	stopLabel := "Stop " + model
 	_, ok := items[stopLabel]
 	require.True(t, ok, "Stop must stay in the menu for a kept model: %v", items)
 	clicked := time.Now()
