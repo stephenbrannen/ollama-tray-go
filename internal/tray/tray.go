@@ -77,7 +77,7 @@ type app struct {
 	ui      ui
 	refresh chan struct{}
 	actions chan action
-	// now is the clock; tests replace it to expire an action failure without waiting.
+	// now is the clock; tests inject one to expire an action failure without waiting.
 	now func() time.Time
 
 	// last is read and written only by the poll goroutine.
@@ -90,12 +90,12 @@ type app struct {
 	failure menu.ActionFailure
 }
 
-func newApp(cfg Config) *app {
+func newApp(cfg Config, now func() time.Time) *app {
 	return &app{
 		cfg:     cfg,
 		refresh: make(chan struct{}, 1),
 		actions: make(chan action, actionQueueSize),
-		now:     time.Now,
+		now:     now,
 	}
 }
 

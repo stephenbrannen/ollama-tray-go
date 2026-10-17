@@ -9,32 +9,40 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 )
 
 const composeFile = "e2e/compose.yaml"
 
 func main() {
-	os.Exit(run(os.Args[1:]))
+	// Ctrl-C cancels the context, which stops the docker client.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	status := run(ctx, os.Args[1:])
+	stop()
+	os.Exit(status)
 }
 
-func run(testArgs []string) int {
+func run(ctx context.Context, testArgs []string) int {
 	args := append([]string{"compose", "-f", composeFile, "run", "--rm", "--build", "tray"}, testArgs...)
-	status := docker(args...)
-	// Ollama keeps running after `compose run` returns, so it is stopped even when the test fails.
-	if downStatus := docker("compose", "-f", composeFile, "down"); status == 0 {
+	status := docker(ctx, args...)
+	// Ollama keeps running after `compose run` returns, so it is stopped even
+	// when the test fails or Ctrl-C cancelled ctx. A cancelled ctx would stop
+	// the down command at once, so it gets a context of its own.
+	if downStatus := docker(context.WithoutCancel(ctx), "compose", "-f", composeFile, "down"); status == 0 {
 		status = downStatus
 	}
 	return status
 }
 
 // docker runs the docker CLI and returns its exit code.
-func docker(args ...string) int {
-	// The arguments are this program's constants plus the caller's own test flags.
-	cmd := exec.Command("docker", args...) //nolint:gosec
+func docker(ctx context.Context, args ...string) int {
+	cmd := exec.CommandContext(ctx, "docker", args...) //nolint:gosec // the arguments are this program's constants plus the caller's own test flags
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	err := cmd.Run()
 	var exit *exec.ExitError

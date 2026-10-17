@@ -8,17 +8,24 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // floor is the minimum statement coverage, in percent. Raise it as coverage
 // rises; never lower it to make a change pass.
 const floor = 80.0
+
+// listTimeout bounds `go list`, which can hang on a broken module cache.
+const listTimeout = time.Minute
 
 // wiringPackages hold only the systray event loop and process startup. They
 // need a display server or a real process, so they stay out of the floor.
@@ -28,14 +35,20 @@ var wiringPackages = []string{
 }
 
 func main() {
-	if err := run(); err != nil {
+	// Ctrl-C cancels the context, which stops the child go process too.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "coverage:", err)
+		stop()
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	out, err := exec.Command("go", "list", "./...").Output()
+func run(ctx context.Context) error {
+	listCtx, cancel := context.WithTimeout(ctx, listTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(listCtx, "go", "list", "./...").Output()
 	if err != nil {
 		return fmt.Errorf("list packages: %w", err)
 	}
@@ -46,8 +59,14 @@ func run() error {
 		}
 	}
 
-	profile := filepath.Join(os.TempDir(), "ollama-tray-cover-"+strconv.Itoa(os.Getpid())+".out")
-	defer func() { _ = os.Remove(profile) }()
+	// MkdirTemp creates the directory with mode 0700, so no other user can
+	// swap the profile for a file of their own.
+	dir, err := os.MkdirTemp("", "ollama-tray-cover-")
+	if err != nil {
+		return fmt.Errorf("create profile directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	profile := filepath.Join(dir, "cover.out")
 
 	// -coverpkg counts a logic package even when only another package's tests
 	// reach it.
@@ -57,8 +76,7 @@ func run() error {
 		"-coverprofile=" + profile,
 		"./...",
 	}
-	// The arguments are package paths from go list and a temp file path.
-	cmd := exec.Command("go", args...) //nolint:gosec
+	cmd := exec.CommandContext(ctx, "go", args...) //nolint:gosec // the arguments are package paths from go list and a temp file path
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("go test: %w", err)

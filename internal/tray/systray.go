@@ -2,6 +2,7 @@ package tray
 
 import (
 	"context"
+	"time"
 
 	"fyne.io/systray"
 
@@ -54,7 +55,7 @@ func (u *systrayUI) SetStopAllVisible(visible bool) {
 
 // Run shows the tray icon and blocks until the user quits or ctx is cancelled.
 func Run(ctx context.Context, cfg Config) {
-	a := newApp(cfg)
+	a := newApp(cfg, time.Now)
 	systray.Run(func() { a.onReady(ctx) }, nil)
 }
 
