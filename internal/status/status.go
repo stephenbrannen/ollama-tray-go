@@ -22,6 +22,8 @@ func (s Status) String() string {
 		return "loaded"
 	case Idle:
 		return "idle"
+	case Unreachable:
+		fallthrough
 	default:
 		return "unreachable"
 	}
