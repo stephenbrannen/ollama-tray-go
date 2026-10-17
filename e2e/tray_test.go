@@ -140,25 +140,16 @@ func requireEnv(t *testing.T, name string) string {
 // the minimum, so each wait above lasts about one poll.
 func startTray(t *testing.T, binary, host string) {
 	t.Helper()
-	// The binary path comes from the e2e container's environment.
-	cmd := exec.Command(binary, "--host", host, "--interval", "1s") //nolint:gosec
+	cmd := exec.CommandContext(t.Context(), binary, "--host", host, "--interval", "1s") //nolint:gosec // the binary path comes from the e2e container's environment
+	// SIGTERM is the tray's normal shutdown, so it releases its bus name.
+	// The default for a cancelled context is SIGKILL.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	// A tray that ignores SIGTERM is killed after this delay.
+	cmd.WaitDelay = 10 * time.Second
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	require.NoError(t, cmd.Start())
-	t.Cleanup(func() {
-		// SIGTERM is the tray's normal shutdown, so it releases its bus name.
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		done := make(chan struct{})
-		go func() {
-			_ = cmd.Wait()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			_ = cmd.Process.Kill()
-			<-done
-		}
-	})
+	// t.Context() ends just before cleanup runs, which sends the SIGTERM.
+	t.Cleanup(func() { _ = cmd.Wait() })
 }
 
 // assertIconColor reads the icon once. The tray sets the icon before the

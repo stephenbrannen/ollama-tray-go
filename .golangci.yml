@@ -16,6 +16,9 @@ linters:
     - contextcheck
     - testifylint
     - exhaustive
+    - noctx
+    - errorlint
+    - nolintlint
 formatters:
   enable:
     - gofumpt

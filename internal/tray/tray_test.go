@@ -125,7 +125,11 @@ func (f *fakeServer) KeepLoaded(ctx context.Context, name string) error {
 }
 
 func newTestApp(srv *fakeServer) (*app, *fakeUI) {
-	a := newApp(Config{Client: srv, Host: "host", Interval: time.Minute})
+	return newTestAppAt(srv, time.Now)
+}
+
+func newTestAppAt(srv *fakeServer, now func() time.Time) (*app, *fakeUI) {
+	a := newApp(Config{Client: srv, Host: "host", Interval: time.Minute}, now)
 	fu := &fakeUI{}
 	a.ui = fu
 	return a, fu
@@ -430,9 +434,8 @@ func TestUnloadReportsEveryFailureAndClearsItOnSuccess(t *testing.T) {
 func TestStopFailureExpiresAfterTheTimeToLive(t *testing.T) {
 	t.Parallel()
 	srv := &fakeServer{onUnload: func(context.Context, string) error { return errors.New("boom") }}
-	a, fu := newTestApp(srv)
 	clock := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	a.now = func() time.Time { return clock }
+	a, fu := newTestAppAt(srv, func() time.Time { return clock })
 
 	a.unload(t.Context(), "a")
 	clock = clock.Add(menu.ActionFailureTTL - time.Second)
