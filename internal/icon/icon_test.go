@@ -61,7 +61,7 @@ func TestPNGColors(t *testing.T) {
 		{status.Loaded, color.RGBA{R: 0x2e, G: 0xa0, B: 0x43, A: 0xff}},
 		{status.Idle, color.RGBA{R: 0x8b, G: 0x94, B: 0x9e, A: 0xff}},
 		{status.Checking, color.RGBA{R: 0x8b, G: 0x94, B: 0x9e, A: 0xff}},
-		{status.Unreachable, color.RGBA{R: 0xd7, G: 0x3a, B: 0x49, A: 0xff}},
+		{status.Unreachable, color.RGBA{R: 0xda, G: 0x36, B: 0x33, A: 0xff}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.state.String(), func(t *testing.T) {

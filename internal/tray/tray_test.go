@@ -196,7 +196,7 @@ func TestPollOnceSendsOnlyChanges(t *testing.T) {
 			name: "server error hides everything",
 			err:  errors.New("down"),
 			want: []string{
-				"icon:unreachable", "tooltip:host\nunreachable", "hide:0", "hidekeep:0", "hide:1", "hidekeep:1", "keepmenu:false", "stopall:false",
+				"icon:unreachable", "tooltip:host\nUnreachable", "hide:0", "hidekeep:0", "hide:1", "hidekeep:1", "keepmenu:false", "stopall:false",
 			},
 		},
 		{name: "same error sends nothing", err: errors.New("still down"), want: nil},
@@ -423,7 +423,7 @@ func TestUnloadReportsEveryFailureAndClearsItOnSuccess(t *testing.T) {
 	a.pollOnce(t.Context())
 
 	require.EqualError(t, a.failure.Err, "a: boom\nc: boom")
-	assert.Contains(t, fu.take(), "tooltip:host\nno model loaded\nstop failed: a: boom c: boom")
+	assert.Contains(t, fu.take(), "tooltip:host\nNo model loaded\nstop failed: a: boom c: boom")
 	assert.Len(t, a.refresh, 1)
 
 	a.unload(t.Context(), "b")
@@ -440,11 +440,11 @@ func TestStopFailureExpiresAfterTheTimeToLive(t *testing.T) {
 	a.unload(t.Context(), "a")
 	clock = clock.Add(menu.ActionFailureTTL - time.Second)
 	a.pollOnce(t.Context())
-	assert.Contains(t, fu.take(), "tooltip:host\nno model loaded\nstop failed: a: boom")
+	assert.Contains(t, fu.take(), "tooltip:host\nNo model loaded\nstop failed: a: boom")
 
 	clock = clock.Add(2 * time.Second)
 	a.pollOnce(t.Context())
-	assert.Equal(t, []string{"tooltip:host\nno model loaded"}, fu.take())
+	assert.Equal(t, []string{"tooltip:host\nNo model loaded"}, fu.take())
 }
 
 func TestStopAttemptClearsTheLastFailureBeforeItFinishes(t *testing.T) {

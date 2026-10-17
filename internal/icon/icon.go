@@ -17,7 +17,7 @@ const size = 64
 var (
 	green = color.RGBA{R: 0x2e, G: 0xa0, B: 0x43, A: 0xff}
 	grey  = color.RGBA{R: 0x8b, G: 0x94, B: 0x9e, A: 0xff}
-	red   = color.RGBA{R: 0xd7, G: 0x3a, B: 0x49, A: 0xff}
+	red   = color.RGBA{R: 0xda, G: 0x36, B: 0x33, A: 0xff}
 
 	once  sync.Once
 	cache map[status.Status][]byte

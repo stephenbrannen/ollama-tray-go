@@ -151,8 +151,8 @@ func TestTooltip(t *testing.T) {
 			menu.ActionFailure{},
 			"http://h:11434\nllama3 (4.5 GB VRAM)\nqwen (4.5 GB VRAM)",
 		},
-		{"idle", nil, nil, menu.ActionFailure{}, "http://h:11434\nno model loaded"},
-		{"unreachable", nil, ollama.ErrUnavailable, menu.ActionFailure{}, "http://h:11434\nunreachable"},
+		{"idle", nil, nil, menu.ActionFailure{}, "http://h:11434\nNo model loaded"},
+		{"unreachable", nil, ollama.ErrUnavailable, menu.ActionFailure{}, "http://h:11434\nUnreachable"},
 		{
 			"fresh stop failure", models("a"), nil, failedAt(time.Second),
 			"http://h:11434\na (4.5 GB VRAM)\nstop failed: boom",
@@ -164,7 +164,7 @@ func TestTooltip(t *testing.T) {
 		},
 		{
 			"stop failure just inside the limit", nil, nil, failedAt(menu.ActionFailureTTL - time.Nanosecond),
-			"http://h:11434\nno model loaded\nstop failed: boom",
+			"http://h:11434\nNo model loaded\nstop failed: boom",
 		},
 		{
 			"stop failure at the limit", models("a"), nil, failedAt(menu.ActionFailureTTL),
@@ -177,7 +177,7 @@ func TestTooltip(t *testing.T) {
 		{
 			"joined stop errors on one line", nil, nil,
 			menu.ActionFailure{Action: "stop", Err: errors.Join(errors.New("a: boom"), errors.New("c: boom")), At: now},
-			"http://h:11434\nno model loaded\nstop failed: a: boom c: boom",
+			"http://h:11434\nNo model loaded\nstop failed: a: boom c: boom",
 		},
 		{
 			"unsafe model name", models("evil\nstop failed: x\x07"), nil,
@@ -192,7 +192,7 @@ func TestTooltip(t *testing.T) {
 		{
 			"long error is cut", nil, nil,
 			menu.ActionFailure{Action: "stop", Err: errors.New(strings.Repeat("e", 300)), At: now},
-			"http://h:11434\nno model loaded\nstop failed: " + strings.Repeat("e", 199) + "\u2026",
+			"http://h:11434\nNo model loaded\nstop failed: " + strings.Repeat("e", 199) + "\u2026",
 		},
 		{
 			"invalid utf-8 is dropped", models("a\xffb"), nil,
@@ -239,5 +239,5 @@ func TestTooltipUnloadTime(t *testing.T) {
 
 func TestCheckingTooltip(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "http://h:11434\nchecking", menu.CheckingTooltip("http://h:11434"))
+	assert.Equal(t, "http://h:11434\nChecking...", menu.CheckingTooltip("http://h:11434"))
 }

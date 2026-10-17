@@ -87,9 +87,9 @@ func Tooltip(host string, models []ollama.LoadedModel, pollErr error, failure Ac
 	b.WriteString(host)
 	switch {
 	case pollErr != nil:
-		b.WriteString("\nunreachable")
+		b.WriteString("\nUnreachable")
 	case len(models) == 0:
-		b.WriteString("\nno model loaded")
+		b.WriteString("\nNo model loaded")
 	default:
 		for _, m := range models {
 			fmt.Fprintf(&b, "\n%s (%.1f GB VRAM", clean(m.Name, maxNameRunes), float64(m.SizeVRAM)/1e9)
@@ -134,7 +134,7 @@ func unloadText(expiresAt, now time.Time) string {
 
 // CheckingTooltip is the tooltip before the first poll returns.
 func CheckingTooltip(host string) string {
-	return host + "\nchecking"
+	return host + "\nChecking..."
 }
 
 // clean makes text from the server safe for a tooltip or menu label. A model
