@@ -12,8 +12,10 @@ import (
 
 // systrayUI is the ui that draws on the real system tray.
 type systrayUI struct {
-	items   [menu.PoolSize]*systray.MenuItem
-	stopAll *systray.MenuItem
+	items           [menu.PoolSize]*systray.MenuItem
+	keepLoaded      *systray.MenuItem
+	keepLoadedItems [menu.PoolSize]*systray.MenuItem
+	stopAll         *systray.MenuItem
 }
 
 func (u *systrayUI) SetIcon(s status.Status) { systray.SetIcon(icon.PNG(s)) }
@@ -26,6 +28,21 @@ func (u *systrayUI) ShowModel(slot int, title string) {
 }
 
 func (u *systrayUI) HideModel(slot int) { u.items[slot].Hide() }
+
+func (u *systrayUI) ShowKeepLoaded(slot int, title string) {
+	u.keepLoadedItems[slot].SetTitle(title)
+	u.keepLoadedItems[slot].Show()
+}
+
+func (u *systrayUI) HideKeepLoaded(slot int) { u.keepLoadedItems[slot].Hide() }
+
+func (u *systrayUI) SetKeepLoadedVisible(visible bool) {
+	if visible {
+		u.keepLoaded.Show()
+	} else {
+		u.keepLoaded.Hide()
+	}
+}
 
 func (u *systrayUI) SetStopAllVisible(visible bool) {
 	if visible {
@@ -52,6 +69,13 @@ func (a *app) onReady(ctx context.Context) {
 		u.items[i].Hide()
 		go a.watch(ctx, u.items[i].ClickedCh, func() { a.stopModel(i) })
 	}
+	u.keepLoaded = systray.AddMenuItem(menu.KeepLoadedMenuLabel, "Keep a model loaded until it is stopped")
+	u.keepLoaded.Hide()
+	for i := range u.keepLoadedItems {
+		u.keepLoadedItems[i] = u.keepLoaded.AddSubMenuItem("", "")
+		u.keepLoadedItems[i].Hide()
+		go a.watch(ctx, u.keepLoadedItems[i].ClickedCh, func() { a.keepModel(i) })
+	}
 	u.stopAll = systray.AddMenuItem("Stop all", "Unload every loaded model")
 	u.stopAll.Hide()
 	go a.watch(ctx, u.stopAll.ClickedCh, a.stopEveryModel)
@@ -69,6 +93,6 @@ func (a *app) onReady(ctx context.Context) {
 	}()
 
 	a.ui = u
-	go a.runStops(ctx)
+	go a.runActions(ctx)
 	go a.poll(ctx)
 }

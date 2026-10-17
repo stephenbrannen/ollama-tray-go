@@ -64,9 +64,57 @@ func TestLayoutFor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			l := menu.LayoutFor(tt.models)
+			l := menu.LayoutFor(tt.models, time.Time{})
 			assert.Equal(t, tt.wantVisible, visible(l))
 			assert.Equal(t, tt.wantStopAll, l.StopAllVisible)
+		})
+	}
+}
+
+func TestLayoutForOffersKeepLoadedUnlessAlreadyKept(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name      string
+		expiresAt time.Time
+		want      bool
+	}{
+		{"unknown expiry", time.Time{}, true},
+		{"unloads soon", now.Add(5 * time.Minute), true},
+		{"long keep-alive", now.Add(30 * 24 * time.Hour), true},
+		{"kept forever", time.Date(2319, 1, 27, 2, 29, 9, 0, time.UTC), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			loaded := []ollama.LoadedModel{{Name: "a", ExpiresAt: tt.expiresAt}}
+			layout := menu.LayoutFor(loaded, now)
+			assert.Equal(t, tt.want, layout.Items[0].KeepLoadedVisible)
+			assert.Equal(t, tt.want, layout.KeepLoadedVisible)
+			assert.Equal(t, "a", layout.Items[0].KeepLabel)
+		})
+	}
+}
+
+func TestLayoutForKeepLoadedSubmenuShowsWhileAnyModelCanBeKept(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	forever := time.Date(2319, 1, 27, 2, 29, 9, 0, time.UTC)
+	tests := []struct {
+		name   string
+		models []ollama.LoadedModel
+		want   bool
+	}{
+		{"no model", nil, false},
+		{"one kept, one not", []ollama.LoadedModel{{Name: "a", ExpiresAt: forever}, {Name: "b"}}, true},
+		{"all kept", []ollama.LoadedModel{{Name: "a", ExpiresAt: forever}, {Name: "b", ExpiresAt: forever}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, menu.LayoutFor(tt.models, now).KeepLoadedVisible)
 		})
 	}
 }
@@ -74,8 +122,8 @@ func TestLayoutFor(t *testing.T) {
 func TestLayoutForShrinkingHidesTrailingItems(t *testing.T) {
 	t.Parallel()
 
-	three := menu.LayoutFor(models("a", "b", "c"))
-	one := menu.LayoutFor(models("a"))
+	three := menu.LayoutFor(models("a", "b", "c"), time.Time{})
+	one := menu.LayoutFor(models("a"), time.Time{})
 
 	assert.Len(t, visible(three), 3)
 	assert.Equal(t, []string{"Stop a"}, visible(one))
@@ -88,33 +136,38 @@ func TestTooltip(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	failedAt := func(ago time.Duration) menu.StopFailure {
-		return menu.StopFailure{Err: errors.New("boom"), At: now.Add(-ago)}
+	failedAt := func(ago time.Duration) menu.ActionFailure {
+		return menu.ActionFailure{Action: "stop", Err: errors.New("boom"), At: now.Add(-ago)}
 	}
 	tests := []struct {
 		name    string
 		models  []ollama.LoadedModel
 		pollErr error
-		stop    menu.StopFailure
+		stop    menu.ActionFailure
 		want    string
 	}{
 		{
 			"loaded", models("llama3", "qwen"), nil,
-			menu.StopFailure{},
+			menu.ActionFailure{},
 			"http://h:11434\nllama3 (4.5 GB VRAM)\nqwen (4.5 GB VRAM)",
 		},
-		{"idle", nil, nil, menu.StopFailure{}, "http://h:11434\nno model loaded"},
-		{"unreachable", nil, ollama.ErrUnavailable, menu.StopFailure{}, "http://h:11434\nunreachable"},
+		{"idle", nil, nil, menu.ActionFailure{}, "http://h:11434\nno model loaded"},
+		{"unreachable", nil, ollama.ErrUnavailable, menu.ActionFailure{}, "http://h:11434\nunreachable"},
 		{
 			"fresh stop failure", models("a"), nil, failedAt(time.Second),
 			"http://h:11434\na (4.5 GB VRAM)\nstop failed: boom",
 		},
 		{
-			"stop failure just inside the limit", nil, nil, failedAt(menu.StopFailureTTL - time.Nanosecond),
+			"fresh keep loaded failure", models("a"), nil,
+			menu.ActionFailure{Action: "keep loaded", Err: errors.New("boom"), At: now.Add(-time.Second)},
+			"http://h:11434\na (4.5 GB VRAM)\nkeep loaded failed: boom",
+		},
+		{
+			"stop failure just inside the limit", nil, nil, failedAt(menu.ActionFailureTTL - time.Nanosecond),
 			"http://h:11434\nno model loaded\nstop failed: boom",
 		},
 		{
-			"stop failure at the limit", models("a"), nil, failedAt(menu.StopFailureTTL),
+			"stop failure at the limit", models("a"), nil, failedAt(menu.ActionFailureTTL),
 			"http://h:11434\na (4.5 GB VRAM)",
 		},
 		{
@@ -123,27 +176,27 @@ func TestTooltip(t *testing.T) {
 		},
 		{
 			"joined stop errors on one line", nil, nil,
-			menu.StopFailure{Err: errors.Join(errors.New("a: boom"), errors.New("c: boom")), At: now},
+			menu.ActionFailure{Action: "stop", Err: errors.Join(errors.New("a: boom"), errors.New("c: boom")), At: now},
 			"http://h:11434\nno model loaded\nstop failed: a: boom c: boom",
 		},
 		{
 			"unsafe model name", models("evil\nstop failed: x\x07"), nil,
-			menu.StopFailure{},
+			menu.ActionFailure{},
 			"http://h:11434\nevil stop failed: x (4.5 GB VRAM)",
 		},
 		{
 			"long model name is cut", models(strings.Repeat("m", 100)), nil,
-			menu.StopFailure{},
+			menu.ActionFailure{},
 			"http://h:11434\n" + strings.Repeat("m", 63) + "\u2026 (4.5 GB VRAM)",
 		},
 		{
 			"long error is cut", nil, nil,
-			menu.StopFailure{Err: errors.New(strings.Repeat("e", 300)), At: now},
+			menu.ActionFailure{Action: "stop", Err: errors.New(strings.Repeat("e", 300)), At: now},
 			"http://h:11434\nno model loaded\nstop failed: " + strings.Repeat("e", 199) + "\u2026",
 		},
 		{
 			"invalid utf-8 is dropped", models("a\xffb"), nil,
-			menu.StopFailure{},
+			menu.ActionFailure{},
 			"http://h:11434\nab (4.5 GB VRAM)",
 		},
 	}
@@ -179,7 +232,7 @@ func TestTooltipUnloadTime(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			loaded := []ollama.LoadedModel{{Name: "llama3", SizeVRAM: 4_500_000_000, ExpiresAt: tt.expiresAt}}
-			assert.Equal(t, tt.want, menu.Tooltip("http://h:11434", loaded, nil, menu.StopFailure{}, now))
+			assert.Equal(t, tt.want, menu.Tooltip("http://h:11434", loaded, nil, menu.ActionFailure{}, now))
 		})
 	}
 }

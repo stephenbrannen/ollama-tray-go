@@ -8,7 +8,7 @@ A Linux system tray icon that shows which models an Ollama server has loaded, an
 * Grey: the server answers but nothing is loaded, or the first check has not returned yet.
 * Red: the server cannot be reached, answers with an error, or sends a reply the tray cannot read.
 
-Hover over the icon to see the server address, each loaded model with its VRAM use and the time until the server unloads it, and the last failed stop. A failed stop leaves the tooltip after 60 seconds.
+Hover over the icon to see the server address, each loaded model with its VRAM use and the time until the server unloads it, and the last failed action. A failed action leaves the tooltip after 60 seconds.
 
 ## Keeping models loaded
 
@@ -23,11 +23,12 @@ The tooltip shows when each model unloads on its own, for example `llama3:8b (4.
 ## Menu
 
 * `Stop <model>` unloads that model. One item shows per loaded model, up to 8. The menu has no room for more, so use `Stop all` for the rest.
+* `Keep loaded` is a submenu with one entry per loaded model, up to 8. An entry keeps that model in memory until you stop it, whatever the server's keep-alive setting is. A model whose tooltip shows `kept loaded` has no entry, and the submenu hides when no model can be kept.
 * `Stop all` unloads every loaded model, including any past the eighth. It shows only while two or more models are loaded.
 * `Refresh now` polls the server at once.
 * `Quit` closes the tray.
 
-Stop requests run in the background, so the menu stays responsive while a large model unloads.
+Requests run in the background, so the menu stays responsive while a large model unloads.
 
 The tray polls every `--interval` and runs until you pick `Quit` or it receives SIGINT or SIGTERM.
 
@@ -128,7 +129,7 @@ The package installs `ollama-tray.desktop` under `share/applications`. To start 
 go run -tags task ./tasks/e2e
 ```
 
-This needs Docker with Compose. It starts a real Ollama server and a test container with a session D-Bus and a stub tray host (a StatusNotifierWatcher). The test runs the tray binary and reads its icon, tooltip and menu over D-Bus the way a desktop panel does. It loads a model, clicks `Stop <model>`, and checks that Ollama unloads it within 0.5 seconds. Then it closes the TCP proxy between the tray and Ollama to check the red unreachable state. The first run downloads `smollm2:135m` into a Docker volume, and later runs reuse it. Arguments after the command go to the test binary, for example `-test.run`.
+This needs Docker with Compose. It starts a real Ollama server and a test container with a session D-Bus and a stub tray host (a StatusNotifierWatcher). The test runs the tray binary and reads its icon, tooltip and menu over D-Bus the way a desktop panel does. It loads a model, clicks the model in the `Keep loaded` submenu and checks that the tooltip shows `kept loaded`, then clicks `Stop <model>` and checks that Ollama unloads the model within 0.5 seconds. Then it closes the TCP proxy between the tray and Ollama to check the red unreachable state. The first run downloads `smollm2:135m` into a Docker volume, and later runs reuse it. Arguments after the command go to the test binary, for example `-test.run`.
 
 The test is behind the `e2e` build tag, so `go test ./...` and the coverage gate do not run it. CI runs it in the `e2e` workflow.
 

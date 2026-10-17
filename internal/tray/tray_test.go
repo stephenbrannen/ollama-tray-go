@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -20,6 +21,9 @@ import (
 // hangTimeout only turns a deadlocked test into a failure; a passing test
 // never waits for it.
 const hangTimeout = 5 * time.Second
+
+// foreverKeepAlive is how far out the server reports a model kept loaded.
+const foreverKeepAlive = 290 * 365 * 24 * time.Hour
 
 func loaded(names ...string) []ollama.LoadedModel {
 	out := make([]ollama.LoadedModel, 0, len(names))
@@ -49,20 +53,25 @@ func (f *fakeUI) take() []string {
 	return calls
 }
 
-func (f *fakeUI) SetIcon(s status.Status)      { f.record("icon:%s", s) }
-func (f *fakeUI) SetTooltip(text string)       { f.record("tooltip:%s", text) }
-func (f *fakeUI) HideModel(slot int)           { f.record("hide:%d", slot) }
-func (f *fakeUI) SetStopAllVisible(show bool)  { f.record("stopall:%t", show) }
-func (f *fakeUI) ShowModel(slot int, t string) { f.record("show:%d:%s", slot, t) }
+func (f *fakeUI) SetIcon(s status.Status)           { f.record("icon:%s", s) }
+func (f *fakeUI) SetTooltip(text string)            { f.record("tooltip:%s", text) }
+func (f *fakeUI) HideModel(slot int)                { f.record("hide:%d", slot) }
+func (f *fakeUI) SetStopAllVisible(show bool)       { f.record("stopall:%t", show) }
+func (f *fakeUI) ShowModel(slot int, t string)      { f.record("show:%d:%s", slot, t) }
+func (f *fakeUI) ShowKeepLoaded(slot int, t string) { f.record("showkeep:%d:%s", slot, t) }
+func (f *fakeUI) HideKeepLoaded(slot int)           { f.record("hidekeep:%d", slot) }
+func (f *fakeUI) SetKeepLoadedVisible(show bool)    { f.record("keepmenu:%t", show) }
 
 type fakeServer struct {
 	mu     sync.Mutex
 	models []ollama.LoadedModel
 	err    error
 	polls  int
-	// onPoll and onUnload replace the default behavior when set.
+	kept   []string
+	// onPoll, onUnload and onKeep replace the default behavior when set.
 	onPoll   func(ctx context.Context)
 	onUnload func(ctx context.Context, name string) error
+	onKeep   func(ctx context.Context, name string) error
 }
 
 func (f *fakeServer) set(models []ollama.LoadedModel, err error) {
@@ -95,6 +104,26 @@ func (f *fakeServer) Unload(ctx context.Context, name string) error {
 	return f.onUnload(ctx, name)
 }
 
+// KeepLoaded does what the server does: the model's expiry moves out to the
+// far future, which the next LoadedModels reports.
+func (f *fakeServer) KeepLoaded(ctx context.Context, name string) error {
+	f.mu.Lock()
+	f.kept = append(f.kept, name)
+	models := slices.Clone(f.models)
+	for i := range models {
+		if models[i].Name == name {
+			models[i].ExpiresAt = time.Now().Add(foreverKeepAlive)
+		}
+	}
+	f.models = models
+	onKeep := f.onKeep
+	f.mu.Unlock()
+	if onKeep == nil {
+		return nil
+	}
+	return onKeep(ctx, name)
+}
+
 func newTestApp(srv *fakeServer) (*app, *fakeUI) {
 	a := newApp(Config{Client: srv, Host: "host", Interval: time.Minute})
 	fu := &fakeUI{}
@@ -102,12 +131,12 @@ func newTestApp(srv *fakeServer) (*app, *fakeUI) {
 	return a, fu
 }
 
-func queued(a *app) [][]string {
-	var out [][]string
+func queued(a *app) []action {
+	var out []action
 	for {
 		select {
-		case names := <-a.stops:
-			out = append(out, names)
+		case act := <-a.actions:
+			out = append(out, act)
 		default:
 			return out
 		}
@@ -131,7 +160,7 @@ func TestPollOnceSendsOnlyChanges(t *testing.T) {
 	hidden := func(from int) []string {
 		var out []string
 		for i := from; i < menu.PoolSize; i++ {
-			out = append(out, fmt.Sprintf("hide:%d", i))
+			out = append(out, fmt.Sprintf("hide:%d", i), fmt.Sprintf("hidekeep:%d", i))
 		}
 		return out
 	}
@@ -145,24 +174,26 @@ func TestPollOnceSendsOnlyChanges(t *testing.T) {
 			name:   "first poll applies everything",
 			models: loaded("a"),
 			want: append(append([]string{
-				"icon:loaded", "tooltip:host\na (4.5 GB VRAM)", "show:0:Stop a",
-			}, hidden(1)...), "stopall:false"),
+				"icon:loaded", "tooltip:host\na (4.5 GB VRAM)", "show:0:Stop a", "showkeep:0:a",
+			}, hidden(1)...), "keepmenu:true", "stopall:false"),
 		},
 		{name: "same state sends nothing", models: loaded("a"), want: nil},
 		{
 			name:   "second model adds one item and stop all",
 			models: loaded("a", "b"),
-			want:   []string{"tooltip:host\na (4.5 GB VRAM)\nb (4.5 GB VRAM)", "show:1:Stop b", "stopall:true"},
+			want:   []string{"tooltip:host\na (4.5 GB VRAM)\nb (4.5 GB VRAM)", "show:1:Stop b", "showkeep:1:b", "stopall:true"},
 		},
 		{
 			name:   "renamed model updates only its slot",
 			models: loaded("c", "b"),
-			want:   []string{"tooltip:host\nc (4.5 GB VRAM)\nb (4.5 GB VRAM)", "show:0:Stop c"},
+			want:   []string{"tooltip:host\nc (4.5 GB VRAM)\nb (4.5 GB VRAM)", "show:0:Stop c", "showkeep:0:c"},
 		},
 		{
 			name: "server error hides everything",
 			err:  errors.New("down"),
-			want: []string{"icon:unreachable", "tooltip:host\nunreachable", "hide:0", "hide:1", "stopall:false"},
+			want: []string{
+				"icon:unreachable", "tooltip:host\nunreachable", "hide:0", "hidekeep:0", "hide:1", "hidekeep:1", "keepmenu:false", "stopall:false",
+			},
 		},
 		{name: "same error sends nothing", err: errors.New("still down"), want: nil},
 	}
@@ -183,9 +214,9 @@ func TestStopModelQueuesTheNameFromTheLastPoll(t *testing.T) {
 		name  string
 		slot  int
 		model []ollama.LoadedModel
-		want  [][]string
+		want  []action
 	}{
-		{"visible slot", 1, loaded("a", "b"), [][]string{{"b"}}},
+		{"visible slot", 1, loaded("a", "b"), []action{{actionStop, []string{"b"}}}},
 		{"hidden slot", 3, loaded("a", "b"), nil},
 	}
 	for _, tt := range tests {
@@ -205,6 +236,64 @@ func TestStopModelQueuesTheNameFromTheLastPoll(t *testing.T) {
 	}
 }
 
+func TestKeepModelQueuesOnlyForAModelThatCanBeKept(t *testing.T) {
+	t.Parallel()
+
+	kept := loaded("a", "b")
+	kept[1].ExpiresAt = time.Now().Add(foreverKeepAlive)
+	tests := []struct {
+		name string
+		slot int
+		want []action
+	}{
+		{"model with a timer", 0, []action{{actionKeepLoaded, []string{"a"}}}},
+		{"model already kept", 1, nil},
+		{"hidden slot", 3, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := &fakeServer{}
+			a, _ := newTestApp(srv)
+			srv.set(kept, nil)
+			a.pollOnce(t.Context())
+
+			a.keepModel(tt.slot)
+
+			assert.Equal(t, tt.want, queued(a))
+		})
+	}
+}
+
+func TestKeepLoadedClickChangesTheNextPoll(t *testing.T) {
+	t.Parallel()
+	srv := &fakeServer{}
+	a, fu := newTestApp(srv)
+	srv.set(loaded("a"), nil)
+	a.pollOnce(t.Context())
+	fu.take()
+	go a.runActions(t.Context())
+
+	a.keepModel(0)
+	receive(t, a.refresh)
+	a.pollOnce(t.Context())
+
+	assert.Equal(t, []string{"a"}, srv.kept)
+	assert.Equal(t, []string{"tooltip:host\na (4.5 GB VRAM, kept loaded)", "hidekeep:0", "keepmenu:false"}, fu.take())
+}
+
+func TestKeepLoadedFailureShowsInTheTooltip(t *testing.T) {
+	t.Parallel()
+	srv := &fakeServer{onKeep: func(context.Context, string) error { return errors.New("boom") }}
+	a, fu := newTestApp(srv)
+	srv.set(loaded("a"), nil)
+
+	a.keepLoaded(t.Context(), "a")
+	a.pollOnce(t.Context())
+
+	assert.Contains(t, fu.take(), "tooltip:host\na (4.5 GB VRAM, kept loaded)\nkeep loaded failed: a: boom")
+}
+
 func TestStopEveryModelQueuesAllModelsFromTheLastPoll(t *testing.T) {
 	t.Parallel()
 	srv := &fakeServer{}
@@ -214,18 +303,18 @@ func TestStopEveryModelQueuesAllModelsFromTheLastPoll(t *testing.T) {
 
 	a.stopEveryModel()
 
-	assert.Equal(t, [][]string{{"a", "b", "c"}}, queued(a))
+	assert.Equal(t, []action{{actionStop, []string{"a", "b", "c"}}}, queued(a))
 }
 
 func TestEnqueueStopDropsInsteadOfBlockingWhenFull(t *testing.T) {
 	t.Parallel()
 	a, _ := newTestApp(&fakeServer{})
 
-	for range stopQueueSize + 1 {
-		a.enqueueStop([]string{"a"})
+	for range actionQueueSize + 1 {
+		a.enqueue(action{kind: actionStop, names: []string{"a"}})
 	}
 
-	assert.Len(t, queued(a), stopQueueSize)
+	assert.Len(t, queued(a), actionQueueSize)
 }
 
 func TestClicksDuringAStopAreQueuedNotLost(t *testing.T) {
@@ -244,7 +333,7 @@ func TestClicksDuringAStopAreQueuedNotLost(t *testing.T) {
 	a, _ := newTestApp(srv)
 	srv.set(loaded("a", "b"), nil)
 	a.pollOnce(t.Context())
-	go a.runStops(t.Context())
+	go a.runActions(t.Context())
 
 	a.stopModel(0)
 	assert.Equal(t, "a", receive(t, started))
@@ -311,7 +400,7 @@ func TestUnloadRunsConcurrentlyUpToTheLimit(t *testing.T) {
 			a.unload(ctx, names...)
 
 			assert.Equal(t, tt.wantPeak, peak)
-			assert.NoError(t, a.stop.Err)
+			assert.NoError(t, a.failure.Err)
 		})
 	}
 }
@@ -329,13 +418,13 @@ func TestUnloadReportsEveryFailureAndClearsItOnSuccess(t *testing.T) {
 	a.unload(t.Context(), "a", "b", "c")
 	a.pollOnce(t.Context())
 
-	require.EqualError(t, a.stop.Err, "a: boom\nc: boom")
+	require.EqualError(t, a.failure.Err, "a: boom\nc: boom")
 	assert.Contains(t, fu.take(), "tooltip:host\nno model loaded\nstop failed: a: boom c: boom")
 	assert.Len(t, a.refresh, 1)
 
 	a.unload(t.Context(), "b")
 
-	assert.NoError(t, a.stop.Err)
+	assert.NoError(t, a.failure.Err)
 }
 
 func TestStopFailureExpiresAfterTheTimeToLive(t *testing.T) {
@@ -346,7 +435,7 @@ func TestStopFailureExpiresAfterTheTimeToLive(t *testing.T) {
 	a.now = func() time.Time { return clock }
 
 	a.unload(t.Context(), "a")
-	clock = clock.Add(menu.StopFailureTTL - time.Second)
+	clock = clock.Add(menu.ActionFailureTTL - time.Second)
 	a.pollOnce(t.Context())
 	assert.Contains(t, fu.take(), "tooltip:host\nno model loaded\nstop failed: a: boom")
 
@@ -359,19 +448,19 @@ func TestStopAttemptClearsTheLastFailureBeforeItFinishes(t *testing.T) {
 	t.Parallel()
 	srv := &fakeServer{}
 	a, _ := newTestApp(srv)
-	a.stop = menu.StopFailure{Err: errors.New("old"), At: a.now()}
+	a.failure = menu.ActionFailure{Action: "stop", Err: errors.New("old"), At: a.now()}
 	var seen error
 	srv.onUnload = func(context.Context, string) error {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		seen = a.stop.Err
+		seen = a.failure.Err
 		return errors.New("new")
 	}
 
 	a.unload(t.Context(), "a")
 
 	require.NoError(t, seen)
-	assert.EqualError(t, a.stop.Err, "a: new")
+	assert.EqualError(t, a.failure.Err, "a: new")
 }
 
 func TestWatchRunsOnClickPerClickUntilContextEnds(t *testing.T) {

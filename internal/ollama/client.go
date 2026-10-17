@@ -119,18 +119,31 @@ func parseExpiry(raw json.RawMessage) time.Time {
 	return t.UTC()
 }
 
-type unloadRequest struct {
+type keepAliveRequest struct {
 	Model string `json:"model"`
 	// KeepAlive is how long the server keeps the model loaded after this
 	// request. Zero tells it to unload now; it is the call `ollama stop` makes.
+	// -1 tells it to keep the model until someone stops it.
 	KeepAlive int `json:"keep_alive"`
 }
 
 // Unload evicts a model from memory (POST /api/generate with keep_alive 0).
 func (c *Client) Unload(ctx context.Context, name string) error {
-	payload, err := json.Marshal(unloadRequest{Model: name, KeepAlive: 0})
+	return c.setKeepAlive(ctx, name, 0)
+}
+
+// KeepLoaded tells the server to hold a model in memory until it is stopped
+// (POST /api/generate with keep_alive -1). It changes this model only, not
+// the server's default keep-alive. A model that has already unloaded is
+// loaded again first, because the server loads a model to answer the call.
+func (c *Client) KeepLoaded(ctx context.Context, name string) error {
+	return c.setKeepAlive(ctx, name, -1)
+}
+
+func (c *Client) setKeepAlive(ctx context.Context, name string, keepAlive int) error {
+	payload, err := json.Marshal(keepAliveRequest{Model: name, KeepAlive: keepAlive})
 	if err != nil {
-		return fmt.Errorf("encode unload request: %w", err)
+		return fmt.Errorf("encode keep-alive request: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.unloadTimeout)
 	defer cancel()
