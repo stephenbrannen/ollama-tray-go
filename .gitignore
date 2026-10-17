@@ -1,0 +1,7 @@
+# Planning docs stay local; only how-it-works docs are committed.
+docs/plans/
+
+bin/
+result
+result-*
+.direnv/
