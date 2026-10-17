@@ -10,8 +10,8 @@ A Linux system tray icon that shows which models an Ollama server has loaded, an
 
 ## Usage
 
-* `--host` sets the Ollama server address. It falls back to `OLLAMA_HOST`, then `http://127.0.0.1:11434`. A host with no port uses 11434 for every scheme.
-* `--interval` sets the time between status polls (default `5s`).
+* `--host` sets the Ollama server address. It falls back to `OLLAMA_HOST`, then `http://127.0.0.1:11434`. A host with no port uses 11434 for every scheme. Only `http` and `https` are accepted, and user info, a query or a fragment in the address is an error.
+* `--interval` sets the time between status polls (default `5s`, minimum `1s`).
 * `--version` prints the version, which is the short commit hash for a Nix build.
 
 ## Install on NixOS

@@ -23,37 +23,66 @@ const (
 	// maxResponseBody caps a success response. The host is user-configured, so
 	// a wrong or hostile server must not make the tray buffer unbounded data.
 	maxResponseBody = 1 << 20
+	// maxDrainBody caps how much of an error response is read and discarded.
+	// The transport reuses a connection only after the body is fully read.
+	maxDrainBody = 64 << 10
+
+	// statusTimeout bounds a status call, which runs on every poll.
+	statusTimeout = 2 * time.Second
+	// unloadTimeout is longer because the server may write a large model's
+	// state out of memory before it answers.
+	unloadTimeout = 10 * time.Second
 )
 
 // LoadedModel is a model currently held in memory by the server.
 type LoadedModel struct {
-	Name      string
-	SizeVRAM  int64 // bytes
-	ExpiresAt time.Time
+	Name     string
+	SizeVRAM int64 // bytes
 }
 
 // Client talks to one Ollama server.
 type Client struct {
-	baseURL string
-	http    *http.Client
+	baseURL       string
+	http          *http.Client
+	statusTimeout time.Duration
+	unloadTimeout time.Duration
 }
 
-// NewClient returns a Client for baseURL (see ResolveHost). Per-call
-// timeouts belong on httpClient or on the context.
+// NewHTTPClient returns the http.Client to pass to NewClient. It does not
+// follow redirects: the host is user-configured, so a redirect could send the
+// request to another host, or from https to http. A redirect response is
+// returned as is and counts as ErrUnavailable. It sets no overall timeout
+// because Client applies one per call.
+func NewHTTPClient() *http.Client {
+	return &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+// NewClient returns a Client for baseURL (see ResolveHost). Each call has its
+// own timeout, so httpClient needs none.
 func NewClient(baseURL string, httpClient *http.Client) *Client {
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), http: httpClient}
+	return &Client{
+		baseURL:       strings.TrimRight(baseURL, "/"),
+		http:          httpClient,
+		statusTimeout: statusTimeout,
+		unloadTimeout: unloadTimeout,
+	}
 }
 
 type psResponse struct {
 	Models []struct {
-		Name      string    `json:"name"`
-		SizeVRAM  int64     `json:"size_vram"`
-		ExpiresAt time.Time `json:"expires_at"`
+		Name     string `json:"name"`
+		SizeVRAM int64  `json:"size_vram"`
 	} `json:"models"`
 }
 
 // LoadedModels lists the models currently loaded (GET /api/ps).
 func (c *Client) LoadedModels(ctx context.Context) ([]LoadedModel, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.statusTimeout)
+	defer cancel()
 	body, err := c.do(ctx, http.MethodGet, "/api/ps", nil)
 	if err != nil {
 		return nil, err
@@ -66,7 +95,7 @@ func (c *Client) LoadedModels(ctx context.Context) ([]LoadedModel, error) {
 
 	models := make([]LoadedModel, 0, len(parsed.Models))
 	for _, m := range parsed.Models {
-		models = append(models, LoadedModel{Name: m.Name, SizeVRAM: m.SizeVRAM, ExpiresAt: m.ExpiresAt})
+		models = append(models, LoadedModel{Name: m.Name, SizeVRAM: m.SizeVRAM})
 	}
 	return models, nil
 }
@@ -84,6 +113,8 @@ func (c *Client) Unload(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("encode unload request: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(ctx, c.unloadTimeout)
+	defer cancel()
 	_, err = c.do(ctx, http.MethodPost, "/api/generate", payload)
 	return err
 }
@@ -109,6 +140,7 @@ func (c *Client) do(ctx context.Context, method, path string, payload []byte) ([
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainBody))
 		return nil, fmt.Errorf("%w: %s %s: status %d: %s",
 			ErrUnavailable, method, path, resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}

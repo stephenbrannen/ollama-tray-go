@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -18,39 +19,51 @@ const (
 // from 1 to 65535.
 var ErrInvalidPort = errors.New("invalid port")
 
+// ErrInvalidHost is returned by ResolveHost when the address is not a plain
+// http or https server address.
+var ErrInvalidHost = errors.New("invalid host")
+
 // ResolveHost returns the server base URL: the flag if set, else OLLAMA_HOST,
 // else http://127.0.0.1:11434.
 //
-// No scheme means http. No port means 11434 for every scheme, including
-// https, because an Ollama server is almost never on 80 or 443 and a proxy
-// user gives the port explicitly. An empty host means 127.0.0.1, because
-// localhost can resolve to ::1 while Ollama listens on IPv4 only. A path
-// after the host is kept without its trailing slash. An invalid port is an
+// No scheme means http. The scheme is case-insensitive and must be http or
+// https. No port means 11434 for every scheme, including https, because an
+// Ollama server is almost never on 80 or 443 and a proxy user gives the port
+// explicitly. An empty host means 127.0.0.1, because localhost can resolve to
+// ::1 while Ollama listens on IPv4 only. A path after the host is kept without
+// its trailing slash. User info, a query and a fragment are errors: the client
+// appends its own paths, so they would send requests somewhere the user did
+// not type, and user info would add a Basic auth header. An invalid port is an
 // error, not a silent fallback.
 func ResolveHost(flag string) (string, error) {
 	raw := strings.TrimSpace(flag)
 	if raw == "" {
 		raw = strings.TrimSpace(os.Getenv("OLLAMA_HOST"))
 	}
-
-	scheme := "http"
-	if rest, ok := strings.CutPrefix(raw, "http://"); ok {
-		raw = rest
-	} else if rest, ok := strings.CutPrefix(raw, "https://"); ok {
-		scheme = "https"
-		raw = rest
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
 	}
 
-	authority, path, _ := strings.Cut(raw, "/")
-	path = strings.TrimRight(path, "/")
-	if path != "" {
-		path = "/" + path
-	}
-
-	host, port, err := net.SplitHostPort(authority)
+	u, err := url.Parse(raw)
 	if err != nil {
-		host, port = strings.Trim(authority, "[]"), ""
+		// net/url exports no sentinel for a bad port, and the existing
+		// contract keeps ErrInvalidPort distinct from other bad addresses.
+		if strings.Contains(err.Error(), "invalid port") {
+			return "", fmt.Errorf("%w in %q", ErrInvalidPort, raw)
+		}
+		return "", fmt.Errorf("%w %q: %w", ErrInvalidHost, raw, err)
 	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("%w %q: scheme must be http or https", ErrInvalidHost, raw)
+	}
+	// Checking the raw text also catches an empty query ("box?") that
+	// url.URL leaves no trace of.
+	if u.User != nil || strings.ContainsAny(raw, "?#") {
+		// The message leaves out the address because it can hold a password.
+		return "", fmt.Errorf("%w: user info, query and fragment are not allowed", ErrInvalidHost)
+	}
+
+	host, port := u.Hostname(), u.Port()
 	if host == "" {
 		host = defaultHost
 	}
@@ -60,5 +73,6 @@ func ResolveHost(flag string) (string, error) {
 		return "", fmt.Errorf("%w %q", ErrInvalidPort, port)
 	}
 
-	return scheme + "://" + net.JoinHostPort(host, port) + path, nil
+	path := strings.TrimRight(u.EscapedPath(), "/")
+	return u.Scheme + "://" + net.JoinHostPort(host, port) + path, nil
 }

@@ -31,6 +31,8 @@ func TestResolveHost(t *testing.T) {
 		{name: "non-numeric port", flag: "gpu-box:abc", err: ErrInvalidPort},
 		{name: "port above range", flag: "gpu-box:70000", err: ErrInvalidPort},
 		{name: "port zero", flag: "gpu-box:0", err: ErrInvalidPort},
+		{name: "uppercase scheme", flag: "HTTP://box:1234", want: "http://box:1234"},
+		{name: "mixed case https scheme", flag: "HttpS://box", want: "https://box:11434"},
 		{name: "blank flag falls back to env", flag: "  ", env: "envhost", want: "http://envhost:11434"},
 	}
 	for _, tt := range tests {
@@ -41,6 +43,34 @@ func TestResolveHost(t *testing.T) {
 
 			assert.ErrorIs(t, err, tt.err)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestResolveHostRejects(t *testing.T) {
+	tests := []struct {
+		name string
+		flag string
+		want error
+	}{
+		{name: "ftp scheme", flag: "ftp://box", want: ErrInvalidHost},
+		{name: "unix scheme", flag: "unix:///var/run/ollama.sock", want: ErrInvalidHost},
+		{name: "user info", flag: "good.lan@evil.com", want: ErrInvalidHost},
+		{name: "scheme and user info", flag: "http://user@box:8080", want: ErrInvalidHost},
+		{name: "query", flag: "box?x=1", want: ErrInvalidHost},
+		{name: "empty query", flag: "http://box:8080/?", want: ErrInvalidHost},
+		{name: "fragment", flag: "box#frag", want: ErrInvalidHost},
+		{name: "space in host", flag: "bad host", want: ErrInvalidHost},
+		{name: "non-numeric port", flag: "http://box:abc", want: ErrInvalidPort},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("OLLAMA_HOST", "")
+
+			got, err := ResolveHost(tt.flag)
+
+			assert.ErrorIs(t, err, tt.want)
+			assert.Empty(t, got)
 		})
 	}
 }
