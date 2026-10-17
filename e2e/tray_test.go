@@ -26,7 +26,7 @@ import (
 const (
 	grey  = "#8b949e"
 	green = "#2ea043"
-	red   = "#d73a49"
+	red   = "#da3633"
 
 	// startupTimeout covers the tray's first D-Bus calls on a slow runner.
 	startupTimeout = 30 * time.Second
@@ -76,7 +76,7 @@ func TestTrayFollowsARealServer(t *testing.T) {
 	tray := newTrayItem(conn, registered)
 
 	tip := waitUntil(t, "the idle tooltip", startupTimeout, tray.toolTip, func(tip toolTip) bool {
-		return tip.Title == host+"\nno model loaded"
+		return tip.Title == host+"\nNo model loaded"
 	})
 	// fyne.io/systray puts the whole tooltip in the title and sends no text or icon.
 	t.Logf("ToolTip as the tray sends it: %#v", tip)
@@ -116,13 +116,13 @@ func TestTrayFollowsARealServer(t *testing.T) {
 	t.Logf("Ollama unloaded the model %s after the click", time.Since(clicked))
 
 	waitUntil(t, "the tooltip to show nothing loaded", updateTimeout, tray.toolTip, func(tip toolTip) bool {
-		return tip.Title == host+"\nno model loaded"
+		return tip.Title == host+"\nNo model loaded"
 	})
 	assertIconColor(t, tray, grey)
 
 	tcpProxy.close()
 	waitUntil(t, "the tooltip to show the server unreachable", updateTimeout, tray.toolTip, func(tip toolTip) bool {
-		return tip.Title == host+"\nunreachable"
+		return tip.Title == host+"\nUnreachable"
 	})
 	assertIconColor(t, tray, red)
 }
