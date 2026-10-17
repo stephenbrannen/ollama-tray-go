@@ -67,6 +67,8 @@ An invalid flag, host or interval prints an error to stderr and exits with 2.
 
 ## Install on NixOS
 
+The build needs a nixpkgs with Go 1.26 or newer. `go.mod` requires Go 1.26, and nixpkgs sets `GOTOOLCHAIN=local`, so Go never downloads a newer toolchain. `nixos-26.05` works; an older nixpkgs fails the build.
+
 Try it without installing:
 
 ```sh
@@ -77,7 +79,9 @@ Or add it to your system flake:
 
 ```nix
 {
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
   inputs.ollama-tray.url = "github:stephenbrannen/ollama-tray-go";
+  inputs.ollama-tray.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs = { nixpkgs, ollama-tray, ... }: {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
@@ -90,6 +94,14 @@ Or add it to your system flake:
   };
 }
 ```
+
+How the three ways to get nixpkgs differ:
+
+* `nix run github:...` uses the nixpkgs pinned in this repository's `flake.lock`. Until a binary cache is published, Nix builds the tray from source. On an empty store that downloads about 215 MiB (742 MiB unpacked) of build tools, mainly Go and GCC, for a 9.9 MiB program.
+* `inputs.ollama-tray.inputs.nixpkgs.follows = "nixpkgs"` builds the tray with your nixpkgs, so it shares your Go and libraries and adds no second nixpkgs to your system. The tray then needs your nixpkgs to have Go 1.26 or newer.
+* `--override-input nixpkgs nixpkgs` does the same for a single command, such as `nix run github:stephenbrannen/ollama-tray-go --override-input nixpkgs nixpkgs`, without editing a flake.
+
+To skip the build, use the release archive in the next section. It holds a prebuilt binary, so it needs neither Nix nor Go.
 
 * While the repository is private, add `access-tokens = github.com=<token>` to `nix.conf` so Nix can fetch it.
 
