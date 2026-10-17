@@ -10,9 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"fyne.io/systray"
+	"golang.org/x/sync/errgroup"
 
-	"github.com/stephenbrannen/ollama-tray-go/internal/icon"
 	"github.com/stephenbrannen/ollama-tray-go/internal/menu"
 	"github.com/stephenbrannen/ollama-tray-go/internal/ollama"
 	"github.com/stephenbrannen/ollama-tray-go/internal/status"
@@ -31,11 +30,40 @@ type Config struct {
 	Interval time.Duration
 }
 
+// ui is every call the tray makes on the system tray, so tests can swap in a
+// fake. fyne.io/systray cannot remove menu items, so the model items form a
+// fixed pool addressed by slot.
+type ui interface {
+	SetIcon(s status.Status)
+	SetTooltip(text string)
+	ShowModel(slot int, title string)
+	HideModel(slot int)
+	SetStopAllVisible(visible bool)
+}
+
+const (
+	// maxConcurrentUnloads bounds the unloads "Stop all" has in flight.
+	maxConcurrentUnloads = menu.PoolSize
+	// stopQueueSize is how many stop requests can wait behind a running stop.
+	stopQueueSize = 16
+)
+
+// applied is what the last poll put on screen.
+type applied struct {
+	status  status.Status
+	tooltip string
+	layout  menu.Layout
+}
+
 type app struct {
 	cfg     Config
+	ui      ui
 	refresh chan struct{}
-	items   [menu.PoolSize]*systray.MenuItem
-	stopAll *systray.MenuItem
+	stops   chan []string
+
+	// last is read and written only by the poll goroutine.
+	last    applied
+	hasLast bool
 
 	mu      sync.Mutex
 	models  []ollama.LoadedModel
@@ -43,46 +71,19 @@ type app struct {
 	stopErr error
 }
 
-// Run shows the tray icon and blocks until the user quits or ctx is cancelled.
-func Run(ctx context.Context, cfg Config) {
-	a := &app{cfg: cfg, refresh: make(chan struct{}, 1)}
-	systray.Run(func() { a.onReady(ctx) }, func() {})
-}
-
-func (a *app) onReady(ctx context.Context) {
-	systray.SetIcon(icon.PNG(status.Unreachable))
-	systray.SetTitle("Ollama")
-	systray.SetTooltip(a.cfg.Host)
-
-	for i := range a.items {
-		a.items[i] = systray.AddMenuItem("", "")
-		a.items[i].Hide()
-		go a.watch(ctx, a.items[i], func() { a.stopModel(ctx, i) })
+func newApp(cfg Config) *app {
+	return &app{
+		cfg:     cfg,
+		refresh: make(chan struct{}, 1),
+		stops:   make(chan []string, stopQueueSize),
 	}
-	a.stopAll = systray.AddMenuItem("Stop all", "Unload every loaded model")
-	a.stopAll.Hide()
-	go a.watch(ctx, a.stopAll, func() { a.stopEveryModel(ctx) })
-
-	systray.AddSeparator()
-	refresh := systray.AddMenuItem("Refresh now", "")
-	go a.watch(ctx, refresh, a.requestRefresh)
-	quit := systray.AddMenuItem("Quit", "")
-	go func() {
-		select {
-		case <-quit.ClickedCh:
-		case <-ctx.Done():
-		}
-		systray.Quit()
-	}()
-
-	go a.poll(ctx)
 }
 
-// watch runs onClick for every click on item until ctx ends.
-func (a *app) watch(ctx context.Context, item *systray.MenuItem, onClick func()) {
+// watch runs onClick for every value on clicks until ctx ends.
+func (a *app) watch(ctx context.Context, clicks <-chan struct{}, onClick func()) {
 	for {
 		select {
-		case <-item.ClickedCh:
+		case <-clicks:
 			onClick()
 		case <-ctx.Done():
 			return
@@ -124,25 +125,44 @@ func (a *app) pollOnce(ctx context.Context) {
 	stopErr := a.stopErr
 	a.mu.Unlock()
 
-	systray.SetIcon(icon.PNG(status.From(models, err)))
-	systray.SetTooltip(menu.Tooltip(a.cfg.Host, models, err, stopErr))
+	a.apply(applied{
+		status:  status.From(models, err),
+		tooltip: menu.Tooltip(a.cfg.Host, models, err, stopErr),
+		layout:  layout,
+	})
+}
 
-	for i, it := range layout.Items {
+// apply sends only what differs from the last poll to the ui. Every ui call
+// is a D-Bus signal, and an idle tray would otherwise send dozens per poll.
+func (a *app) apply(next applied) {
+	prev := a.last
+	first := !a.hasLast
+	a.last, a.hasLast = next, true
+
+	if first || prev.status != next.status {
+		a.ui.SetIcon(next.status)
+	}
+	if first || prev.tooltip != next.tooltip {
+		a.ui.SetTooltip(next.tooltip)
+	}
+	for i, it := range next.layout.Items {
+		if !first && prev.layout.Items[i] == it {
+			continue
+		}
 		if it.Visible {
-			a.items[i].SetTitle(it.Label)
-			a.items[i].Show()
+			a.ui.ShowModel(i, it.Label)
 		} else {
-			a.items[i].Hide()
+			a.ui.HideModel(i)
 		}
 	}
-	if layout.StopAllVisible {
-		a.stopAll.Show()
-	} else {
-		a.stopAll.Hide()
+	if first || prev.layout.StopAllVisible != next.layout.StopAllVisible {
+		a.ui.SetStopAllVisible(next.layout.StopAllVisible)
 	}
 }
 
-func (a *app) stopModel(ctx context.Context, index int) {
+// stopModel queues the unload of the model that item index showed at the
+// last poll. It returns at once so the click handler keeps reading clicks.
+func (a *app) stopModel(index int) {
 	// The layout, not the live model list, names the model so the click
 	// unloads what the item's label showed at the last poll.
 	a.mu.Lock()
@@ -151,26 +171,61 @@ func (a *app) stopModel(ctx context.Context, index int) {
 	if name == "" {
 		return
 	}
-	a.unload(ctx, name)
+	a.enqueueStop([]string{name})
 }
 
-func (a *app) stopEveryModel(ctx context.Context) {
+// stopEveryModel queues the unload of every model from the last poll.
+func (a *app) stopEveryModel() {
 	a.mu.Lock()
 	names := make([]string, 0, len(a.models))
 	for _, m := range a.models {
 		names = append(names, m.Name)
 	}
 	a.mu.Unlock()
-	a.unload(ctx, names...)
+	a.enqueueStop(names)
 }
 
-func (a *app) unload(ctx context.Context, names ...string) {
-	var errs []error
-	for _, name := range names {
-		if err := a.cfg.Client.Unload(ctx, name); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+// enqueueStop never blocks the click handler. The queue holds more requests
+// than a person can click while one stop runs, so a full queue is an edge case.
+func (a *app) enqueueStop(names []string) {
+	select {
+	case a.stops <- names:
+	default:
+		log.Printf("stop request dropped: %d requests already queued", stopQueueSize)
+	}
+}
+
+// runStops runs queued stop requests one after another until ctx ends. A
+// request waits here, not in the click handler, so no click is dropped
+// while a slow server answers an earlier one.
+func (a *app) runStops(ctx context.Context) {
+	for {
+		select {
+		case names := <-a.stops:
+			a.unload(ctx, names...)
+		case <-ctx.Done():
+			return
 		}
 	}
+}
+
+// unload unloads names concurrently, so "Stop all" takes about one unload
+// timeout instead of one per model.
+func (a *app) unload(ctx context.Context, names ...string) {
+	// Each goroutine writes only its own element, so no lock is needed.
+	errs := make([]error, len(names))
+	var group errgroup.Group
+	group.SetLimit(maxConcurrentUnloads)
+	for i, name := range names {
+		group.Go(func() error {
+			if err := a.cfg.Client.Unload(ctx, name); err != nil {
+				errs[i] = fmt.Errorf("%s: %w", name, err)
+			}
+			return nil
+		})
+	}
+	_ = group.Wait() // every goroutine returns nil; failures are in errs
+
 	err := errors.Join(errs...)
 	if err != nil {
 		log.Printf("stop failed: %v", err)
