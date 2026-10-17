@@ -32,7 +32,7 @@ Or add it to your system flake:
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
       modules = [
         ({ pkgs, ... }: {
-          environment.systemPackages = [ ollama-tray.packages.${pkgs.system}.default ];
+          environment.systemPackages = [ ollama-tray.packages.${pkgs.stdenv.hostPlatform.system}.default ];
         })
       ];
     };
