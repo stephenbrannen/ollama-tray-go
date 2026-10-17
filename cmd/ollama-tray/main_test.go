@@ -47,6 +47,7 @@ func TestParseConfigErrors(t *testing.T) {
 		{"zero interval", []string{"--interval", "0s"}, nil},
 		{"unknown flag", []string{"--nope"}, errReported},
 		{"help", []string{"-h"}, flag.ErrHelp},
+		{"version", []string{"--version"}, errVersion},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
