@@ -11,14 +11,20 @@ import (
 	"github.com/stephenbrannen/ollama-tray-go/internal/ollama"
 )
 
-// PoolSize is how many "Stop <model>" items the tray creates up front.
+// PoolSize is how many model submenus the tray creates up front.
 // fyne.io/systray cannot remove items, so the tray builds a fixed pool and
 // hides the unused ones. Models past the pool are still reachable with "Stop all".
 const PoolSize = 8
 
+// Labels of the two actions in each model submenu.
 const (
-	// StopFailureTTL is how long a failed stop stays in the tooltip.
-	StopFailureTTL = 60 * time.Second
+	StopLabel       = "Stop"
+	KeepLoadedLabel = "Keep loaded"
+)
+
+const (
+	// ActionFailureTTL is how long a failed action stays in the tooltip.
+	ActionFailureTTL = 60 * time.Second
 
 	// keptLoadedAfter separates a model kept forever from one with a long
 	// keep-alive. For keep-alive -1 the server reports a time about 290 years
@@ -29,19 +35,23 @@ const (
 	maxErrorRunes = 200
 )
 
-// StopFailure is the last failed stop and when it happened. The zero value
-// means no failure.
-type StopFailure struct {
-	Err error
-	At  time.Time
+// ActionFailure is the last failed menu action and when it happened. Action
+// is the verb the tooltip shows, such as "stop". The zero value means no failure.
+type ActionFailure struct {
+	Action string
+	Err    error
+	At     time.Time
 }
 
 // Item is one slot in the model pool.
 type Item struct {
 	Visible bool
-	Label   string
-	// Model is the name to unload when the item is clicked; empty for a hidden slot.
+	// Label is the submenu title, the model name.
+	Label string
+	// Model is the name the submenu actions apply to; empty for a hidden slot.
 	Model string
+	// KeepLoadedVisible is false once the server already keeps the model forever.
+	KeepLoadedVisible bool
 }
 
 // Layout is the visible state of the model part of the menu.
@@ -51,18 +61,23 @@ type Layout struct {
 }
 
 // LayoutFor returns which pool items and "Stop all" show for the loaded models.
-func LayoutFor(models []ollama.LoadedModel) Layout {
+func LayoutFor(models []ollama.LoadedModel, now time.Time) Layout {
 	var l Layout
 	for i := range min(len(models), PoolSize) {
-		l.Items[i] = Item{Visible: true, Label: "Stop " + clean(models[i].Name, maxNameRunes), Model: models[i].Name}
+		l.Items[i] = Item{
+			Visible:           true,
+			Label:             clean(models[i].Name, maxNameRunes),
+			Model:             models[i].Name,
+			KeepLoadedVisible: !keptLoaded(models[i].ExpiresAt, now),
+		}
 	}
 	l.StopAllVisible = len(models) > 1
 	return l
 }
 
 // Tooltip describes the server address, each loaded model with its VRAM in
-// GB and the time until it unloads, and the last failed stop while it is less than StopFailureTTL old.
-func Tooltip(host string, models []ollama.LoadedModel, pollErr error, stop StopFailure, now time.Time) string {
+// GB and the time until it unloads, and the last failed action while it is less than ActionFailureTTL old.
+func Tooltip(host string, models []ollama.LoadedModel, pollErr error, failure ActionFailure, now time.Time) string {
 	var b strings.Builder
 	b.WriteString(host)
 	switch {
@@ -79,10 +94,15 @@ func Tooltip(host string, models []ollama.LoadedModel, pollErr error, stop StopF
 			b.WriteString(")")
 		}
 	}
-	if stop.Err != nil && now.Sub(stop.At) < StopFailureTTL {
-		fmt.Fprintf(&b, "\nstop failed: %s", clean(stop.Err.Error(), maxErrorRunes))
+	if failure.Err != nil && now.Sub(failure.At) < ActionFailureTTL {
+		fmt.Fprintf(&b, "\n%s failed: %s", failure.Action, clean(failure.Err.Error(), maxErrorRunes))
 	}
 	return b.String()
+}
+
+// keptLoaded reports whether the server keeps a model until it is stopped.
+func keptLoaded(expiresAt, now time.Time) bool {
+	return !expiresAt.IsZero() && expiresAt.Sub(now) > keptLoadedAfter
 }
 
 // unloadText says when the server unloads a model on its own. It is empty
@@ -93,7 +113,7 @@ func unloadText(expiresAt, now time.Time) string {
 	}
 	left := expiresAt.Sub(now)
 	switch {
-	case left > keptLoadedAfter:
+	case keptLoaded(expiresAt, now):
 		return "kept loaded"
 	case left < time.Minute:
 		return "unloads in <1m"

@@ -159,23 +159,36 @@ func TestLoadedModelsHonorsContext(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
-func TestUnloadSendsKeepAliveZero(t *testing.T) {
+func TestKeepAliveCallsSendTheExactRequest(t *testing.T) {
 	t.Parallel()
 
-	var gotMethod, gotPath, gotBody string
-	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		gotMethod, gotPath = r.Method, r.URL.Path
-		body, _ := io.ReadAll(r.Body)
-		gotBody = string(body)
-		_, _ = io.WriteString(w, `{"done":true}`)
-	}, time.Second)
+	tests := []struct {
+		name     string
+		call     func(*Client) error
+		wantBody string
+	}{
+		{"unload sends keep_alive 0", func(c *Client) error { return c.Unload(context.Background(), "llama3:8b") }, `{"model":"llama3:8b","keep_alive":0}`},
+		{"keep loaded sends keep_alive -1", func(c *Client) error { return c.KeepLoaded(context.Background(), "llama3:8b") }, `{"model":"llama3:8b","keep_alive":-1}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var gotMethod, gotPath, gotBody string
+			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				gotMethod, gotPath = r.Method, r.URL.Path
+				body, _ := io.ReadAll(r.Body)
+				gotBody = string(body)
+				_, _ = io.WriteString(w, `{"done":true}`)
+			}, time.Second)
 
-	err := client.Unload(context.Background(), "llama3:8b")
+			err := tt.call(client)
 
-	require.NoError(t, err)
-	assert.Equal(t, http.MethodPost, gotMethod)
-	assert.Equal(t, "/api/generate", gotPath)
-	assert.JSONEq(t, `{"model":"llama3:8b","keep_alive":0}`, gotBody)
+			require.NoError(t, err)
+			assert.Equal(t, http.MethodPost, gotMethod)
+			assert.Equal(t, "/api/generate", gotPath)
+			assert.JSONEq(t, tt.wantBody, gotBody)
+		})
+	}
 }
 
 func TestUnloadUnavailable(t *testing.T) {
@@ -230,6 +243,7 @@ func TestCallTimeouts(t *testing.T) {
 	}{
 		{"status", short, time.Hour, func(c *Client) error { _, err := c.LoadedModels(context.Background()); return err }},
 		{"unload", time.Hour, short, func(c *Client) error { return c.Unload(context.Background(), "llama3:8b") }},
+		{"keep loaded", time.Hour, short, func(c *Client) error { return c.KeepLoaded(context.Background(), "llama3:8b") }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

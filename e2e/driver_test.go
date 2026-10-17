@@ -128,7 +128,9 @@ type menuNode struct {
 	Children []dbus.Variant
 }
 
-// visibleItems maps the label of each visible menu item to its id.
+// visibleItems maps the path of each visible menu item to its id. A path is
+// the labels from the top level down, joined by " > ", so a submenu item reads
+// "model > Stop". A hidden item hides its whole submenu.
 func (ti *trayItem) visibleItems() (map[string]int32, error) {
 	menu, err := ti.menu()
 	if err != nil {
@@ -141,21 +143,34 @@ func (ti *trayItem) visibleItems() (map[string]int32, error) {
 	if err := menu.Call(menuInterface+".GetLayout", 0, int32(0), int32(-1), []string{}).Store(&revision, &root); err != nil {
 		return nil, fmt.Errorf("GetLayout: %w", err)
 	}
-	labels := map[string]int32{}
-	for _, child := range root.Children {
+	paths := map[string]int32{}
+	if err := collectVisible(root, "", paths); err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
+func collectVisible(parent menuNode, prefix string, paths map[string]int32) error {
+	for _, child := range parent.Children {
 		var node menuNode
 		if err := child.Store(&node); err != nil {
-			return nil, fmt.Errorf("decode menu item %s: %w", child, err)
+			return fmt.Errorf("decode menu item %s: %w", child, err)
 		}
 		// dbusmenu treats a missing "visible" as true.
 		if visible, ok := node.Props["visible"].Value().(bool); ok && !visible {
 			continue
 		}
-		if label, ok := node.Props["label"].Value().(string); ok {
-			labels[label] = node.ID
+		label, ok := node.Props["label"].Value().(string)
+		if !ok {
+			continue
+		}
+		path := prefix + label
+		paths[path] = node.ID
+		if err := collectVisible(node, path+" > ", paths); err != nil {
+			return err
 		}
 	}
-	return labels, nil
+	return nil
 }
 
 func (ti *trayItem) click(id int32) error {
