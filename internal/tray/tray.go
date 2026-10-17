@@ -42,6 +42,7 @@ type app struct {
 
 	mu      sync.Mutex
 	models  []ollama.LoadedModel
+	layout  menu.Layout
 	stopErr error
 }
 
@@ -121,15 +122,16 @@ func (a *app) pollOnce(ctx context.Context) {
 	defer cancel()
 	models, err := a.cfg.Client.LoadedModels(callCtx)
 
+	layout := menu.LayoutFor(models)
 	a.mu.Lock()
 	a.models = models
+	a.layout = layout
 	stopErr := a.stopErr
 	a.mu.Unlock()
 
 	systray.SetIcon(icon.PNG(status.From(models, err)))
 	systray.SetTooltip(menu.Tooltip(a.cfg.Host, models, err, stopErr))
 
-	layout := menu.LayoutFor(models)
 	for i, it := range layout.Items {
 		if it.Visible {
 			a.items[i].SetTitle(it.Label)
@@ -146,11 +148,10 @@ func (a *app) pollOnce(ctx context.Context) {
 }
 
 func (a *app) stopModel(ctx context.Context, index int) {
+	// The layout, not the live model list, names the model so the click
+	// unloads what the item's label showed at the last poll.
 	a.mu.Lock()
-	var name string
-	if index < len(a.models) {
-		name = a.models[index].Name
-	}
+	name := a.layout.Items[index].Model
 	a.mu.Unlock()
 	if name == "" {
 		return
