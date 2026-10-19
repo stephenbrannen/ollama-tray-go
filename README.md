@@ -146,7 +146,7 @@ Run it with Nix:
 nix run github:stephenbrannen/ollama-tray-go
 ```
 
-On Apple Silicon, Nix downloads the prebuilt package from the `ollama-tray` Cachix cache. The flake has no package for Intel Macs, because the nixpkgs it pins dropped them, so run the tray from source there.
+On Apple Silicon, Nix downloads the prebuilt package from the `ollama-tray` Cachix cache. The flake has no package for Intel Macs, because the nixpkgs it pins dropped them. On an Intel Mac, use the `darwin_amd64` release archive (see Install from a release) or run the tray from source.
 
 Run it from source with Go 1.26 or newer and the Xcode Command Line Tools (`xcode-select --install`), which provide the C compiler:
 
