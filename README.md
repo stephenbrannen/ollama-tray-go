@@ -1,6 +1,6 @@
 # ollama-tray-go
 
-A Linux system tray icon that shows which models an Ollama server has loaded, and unloads them on demand.
+A system tray icon for Linux and macOS that shows which models an Ollama server has loaded, and unloads them on demand.
 
 ## Icon colors
 
@@ -34,7 +34,8 @@ The tray polls every `--interval` and runs until you pick `Quit` or it receives 
 
 ## Requirements
 
-* A Linux desktop with a system tray. GNOME needs the AppIndicator extension to show tray icons.
+* Linux: a desktop with a system tray. GNOME needs the AppIndicator extension to show tray icons.
+* macOS: the icon shows in the menu bar. See [macOS](#macos).
 
 ## Usage
 
@@ -108,7 +109,7 @@ Or add it to your system flake:
 
 How the three ways to get nixpkgs differ:
 
-* `nix run github:...` uses the nixpkgs pinned in this repository's `flake.lock`. On x86_64-linux it downloads the prebuilt program from the binary cache, about 10 MiB. On other systems, or if you decline the cache, Nix builds it from source, which on an empty store downloads about 215 MiB (742 MiB unpacked) of build tools, mainly Go and GCC.
+* `nix run github:...` uses the nixpkgs pinned in this repository's `flake.lock`. On x86_64-linux and aarch64-darwin it downloads the prebuilt program from the binary cache, about 10 MiB. On other systems, or if you decline the cache, Nix builds it from source. On Linux that downloads about 215 MiB (742 MiB unpacked) of build tools on an empty store, mainly Go and GCC.
 * `inputs.ollama-tray.inputs.nixpkgs.follows = "nixpkgs"` builds the tray with your nixpkgs, so it shares your Go and libraries and adds no second nixpkgs to your system. The tray then needs your nixpkgs to have Go 1.26 or newer.
 * `--override-input nixpkgs nixpkgs` does the same for a single command, such as `nix run github:stephenbrannen/ollama-tray-go --override-input nixpkgs nixpkgs`, without editing a flake.
 
@@ -133,14 +134,62 @@ The release workflow runs `go vet` and the tests, and refuses a tag whose commit
 
 ## Autostart
 
-The package installs `ollama-tray.desktop` under `share/applications`. To start the tray on login, copy or link it into `~/.config/autostart/`.
+On Linux the package installs `ollama-tray.desktop` under `share/applications`. To start the tray on login, copy or link it into `~/.config/autostart/`. For macOS, see [Start at login](#start-at-login).
+
+## macOS
+
+On macOS the tray icon sits in the menu bar. The macOS tray library draws it through Cocoa, which Go can only reach with cgo, so every macOS build needs a C compiler. Linux builds do not.
+
+Run it with Nix:
+
+```sh
+nix run github:stephenbrannen/ollama-tray-go
+```
+
+On Apple Silicon, Nix downloads the prebuilt package from the `ollama-tray` Cachix cache. On an Intel Mac, Nix builds it from source.
+
+Run it from source with Go 1.26 or newer and the Xcode Command Line Tools (`xcode-select --install`), which provide the C compiler:
+
+```sh
+go run github.com/stephenbrannen/ollama-tray-go/cmd/ollama-tray@latest
+```
+
+`go install github.com/stephenbrannen/ollama-tray-go/cmd/ollama-tray@latest` puts the binary in `~/go/bin` instead.
+
+### Start at login
+
+* Login Items (System Settings, General, Login Items) accepts the binary, but macOS then opens it in a Terminal window.
+* A LaunchAgent starts it with no window. Save this as `~/Library/LaunchAgents/com.github.stephenbrannen.ollama-tray.plist`, with the full path to your binary:
+
+  ```xml
+  <?xml version="1.0" encoding="UTF-8"?>
+  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+  <plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.github.stephenbrannen.ollama-tray</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/you/go/bin/ollama-tray</string>
+      <string>--host</string>
+      <string>http://127.0.0.1:11434</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+  </dict>
+  </plist>
+  ```
+
+  Load it with `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.github.stephenbrannen.ollama-tray.plist`. A LaunchAgent does not read your shell profile, so set the server with `--host` instead of `OLLAMA_HOST`.
+
+The end-to-end test runs on Linux only. It fakes the D-Bus tray host that Linux desktops use, and macOS has no such host.
 
 ## Development
 
-* `nix develop` provides go and gopls (x86_64-linux and aarch64-linux). golangci-lint and govulncheck are `tool` directives in `go.mod`, so run them as `go tool golangci-lint` and `go tool govulncheck`.
+* `nix develop` provides go and gopls on every system the flake builds for. golangci-lint and govulncheck are `tool` directives in `go.mod`, so run them as `go tool golangci-lint` and `go tool govulncheck`.
 * `git config core.hooksPath .githooks` enables the hooks. `pre-commit` runs gofmt, `go mod tidy -diff`, `go vet`, golangci-lint, and govulncheck. `pre-push` runs the coverage gate and the `tasks` tests.
 * `go run -tags task ./tasks/coverage.go` runs `go test -race -count=1 ./...` and fails below 80% statement coverage. The count leaves out `cmd/ollama-tray` and `internal/tray`, which are startup and tray wiring. `go test -tags task ./tasks/` tests that program.
-* `GOOS=linux CGO_ENABLED=0 go build ./...` checks the Linux build.
+* `GOOS=linux CGO_ENABLED=0 go build ./...` checks the Linux build. On a Mac, `CGO_ENABLED=1 go build ./cmd/ollama-tray` checks the macOS build.
 * `nix fmt` formats `flake.nix`. `nix build` builds the package and `nix flake check` also runs every package's tests.
 
 ### End-to-end test

@@ -1,5 +1,5 @@
 {
-  description = "ollama-tray-go: Linux system tray for Ollama";
+  description = "ollama-tray-go: system tray for Ollama on Linux and macOS";
 
   # Nix asks once whether to trust these settings, then downloads the
   # prebuilt package instead of compiling it.
@@ -18,6 +18,8 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in
@@ -26,6 +28,7 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          inherit (pkgs.stdenv.hostPlatform) isDarwin isLinux;
           version = self.shortRev or self.dirtyShortRev or "dirty";
         in
         {
@@ -36,20 +39,24 @@
             subPackages = [ "cmd/ollama-tray" ];
             # Must be updated whenever go.mod or go.sum change.
             vendorHash = "sha256-P9bTFYeB/z4LhYfOkLszjiXeSridHn4b9DOs5U8lR4g=";
-            env.CGO_ENABLED = 0;
+            # On Linux the tray talks D-Bus in pure Go, so the binary links
+            # statically. On macOS systray draws its menu bar item through
+            # Cocoa, which only cgo can reach.
+            env.CGO_ENABLED = if isDarwin then 1 else 0;
             ldflags = [
               "-s"
               "-w"
               "-X github.com/stephenbrannen/ollama-tray-go/internal/version.Version=${version}"
             ];
-            postInstall = ''
+            # Only Linux desktops read .desktop files.
+            postInstall = pkgs.lib.optionalString isLinux ''
               install -Dm644 ${./ollama-tray.desktop} $out/share/applications/ollama-tray.desktop
             '';
             meta = {
-              description = "Linux system tray for Ollama";
+              description = "System tray for Ollama on Linux and macOS";
               license = pkgs.lib.licenses.mit;
               mainProgram = "ollama-tray";
-              platforms = pkgs.lib.platforms.linux;
+              platforms = pkgs.lib.platforms.linux ++ pkgs.lib.platforms.darwin;
             };
           };
         }
