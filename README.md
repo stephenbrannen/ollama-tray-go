@@ -116,13 +116,22 @@ To skip the build, use the release archive in the next section. It holds a prebu
 
 ## Install from a release
 
-Each tagged release has a `tar.gz` archive per architecture (`linux_amd64`, `linux_arm64`) and a `checksums.txt`.
+Each tagged release has a `tar.gz` archive per platform (`linux_amd64`, `linux_arm64`, `darwin_amd64`, `darwin_arm64`) and one `checksums.txt` that covers them all. Mac archives start with v0.3.0.
 
-* Download the archive for your architecture and `checksums.txt` from the Releases page, or with `gh release download <tag> -R stephenbrannen/ollama-tray-go -p '*_linux_amd64.tar.gz' -p checksums.txt` (use `arm64` on ARM).
-* Verify it with `sha256sum -c checksums.txt --ignore-missing`.
+* Download the archive for your platform and `checksums.txt` from the Releases page, or with `gh release download <tag> -R stephenbrannen/ollama-tray-go -p '*_linux_amd64.tar.gz' -p checksums.txt`. Use `linux_arm64` on ARM Linux, `darwin_arm64` on Apple silicon Macs, and `darwin_amd64` on Intel Macs.
+* Verify it with `sha256sum -c checksums.txt --ignore-missing` (on a Mac, `shasum -a 256 -c checksums.txt --ignore-missing`).
 * Verify its build provenance with `gh attestation verify <archive> -R stephenbrannen/ollama-tray-go`. This proves the archive came from this repository's release workflow. Releases from v0.1.2 on carry one; v0.1.0 and v0.1.1 were published while the repository was private and have none.
 * Extract it with `tar xzf <archive>`, then move `ollama-tray` to `~/.local/bin`.
-* Copy `ollama-tray.desktop` to `~/.config/autostart/` to start the tray on login. It runs `ollama-tray` from your `PATH`.
+* On Linux, copy `ollama-tray.desktop` to `~/.config/autostart/` to start the tray on login. It runs `ollama-tray` from your `PATH`.
+
+### macOS: the unsigned binary
+
+The Mac binary is not signed or notarized, because that needs a paid Apple Developer account. If the archive was downloaded in a browser, macOS marks it as quarantined, and Gatekeeper refuses to open the binary with a warning that Apple cannot check it for malicious software. Use one of these, after you verify the checksum and the attestation:
+
+* Remove the quarantine mark with `xattr -d com.apple.quarantine ~/.local/bin/ollama-tray`.
+* Or run it once, then open System Settings > Privacy & Security and choose Open Anyway.
+
+`gh release download` and `curl` do not set the quarantine mark, so a binary fetched that way runs without the prompt.
 
 ### Withdraw a bad release
 
