@@ -18,7 +18,8 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
+        # nixpkgs 26.11 dropped Intel Macs (x86_64-darwin), so only Apple
+        # Silicon gets a package.
         "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
