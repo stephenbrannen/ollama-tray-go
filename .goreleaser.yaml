@@ -25,6 +25,12 @@ builds:
     env:
       # fyne.io/systray talks to Cocoa through cgo.
       - CGO_ENABLED=1
+      # Without a minimum, the C toolchain stamps the runner's own macOS version
+      # into the binary, and older Macs refuse to start it. macOS 13 is the
+      # oldest version that recent Go runtimes target. The flags, unlike
+      # MACOSX_DEPLOYMENT_TARGET, are part of Go's build cache key.
+      - CGO_CFLAGS=-O2 -g -mmacosx-version-min=13.0
+      - CGO_LDFLAGS=-O2 -g -mmacosx-version-min=13.0
     flags:
       - -trimpath
     mod_timestamp: '{{ .CommitTimestamp }}'
