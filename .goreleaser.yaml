@@ -1,10 +1,14 @@
 version: 2
 
+# Each release runner builds only its own OS, because the macOS build needs
+# cgo for the Cocoa tray. The release workflow then merges both sets.
 builds:
-  - main: ./cmd/ollama-tray
+  - id: linux
+    main: ./cmd/ollama-tray
     binary: ollama-tray
     goos: [linux]
     goarch: [amd64, arm64]
+    skip: '{{ ne .Runtime.Goos "linux" }}'
     env:
       - CGO_ENABLED=0
     flags:
@@ -12,9 +16,25 @@ builds:
     mod_timestamp: '{{ .CommitTimestamp }}'
     ldflags:
       - -s -w -X github.com/stephenbrannen/ollama-tray-go/internal/version.Version={{.Version}}
+  - id: darwin
+    main: ./cmd/ollama-tray
+    binary: ollama-tray
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    skip: '{{ ne .Runtime.Goos "darwin" }}'
+    env:
+      # fyne.io/systray talks to Cocoa through cgo.
+      - CGO_ENABLED=1
+    flags:
+      - -trimpath
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    ldflags:
+      - -s -w -X github.com/stephenbrannen/ollama-tray-go/internal/version.Version={{.Version}}
 
 archives:
-  - formats: [tar.gz]
+  - id: linux
+    ids: [linux]
+    formats: [tar.gz]
     # Pin the file times so the archive bytes do not depend on checkout time.
     builds_info:
       mtime: '{{ .CommitDate }}'
@@ -28,9 +48,24 @@ archives:
       - src: ollama-tray.desktop
         info:
           mtime: '{{ .CommitDate }}'
+  # The desktop entry is a Linux autostart file, so macOS archives leave it out.
+  - id: darwin
+    ids: [darwin]
+    formats: [tar.gz]
+    builds_info:
+      mtime: '{{ .CommitDate }}'
+    files:
+      - src: README.md
+        info:
+          mtime: '{{ .CommitDate }}'
+      - src: LICENSE
+        info:
+          mtime: '{{ .CommitDate }}'
 
 checksum:
   name_template: checksums.txt
 
 changelog:
   use: github
+  # The release notes come from the Linux build, so macOS skips the API call.
+  disable: '{{ ne .Runtime.Goos "linux" }}'
