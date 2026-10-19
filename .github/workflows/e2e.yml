@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   e2e:
+    # Linux only: the test fakes the D-Bus tray host that Linux panels use.
+    # macOS draws the tray through Cocoa, which has no such host to fake.
     runs-on: ubuntu-latest
     # Each run pulls the Ollama image and the model (about 270 MB), then builds the test image.
     timeout-minutes: 20

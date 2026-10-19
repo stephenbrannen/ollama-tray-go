@@ -72,3 +72,40 @@ jobs:
         if: failure()
         run: |
           echo "::error::If nix build reported a hash mismatch, vendorHash in flake.nix is stale. See the Development section of the README."
+
+  # macOS builds the tray with cgo, so it needs its own build and tests.
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go tool golangci-lint run ./...
+      - name: Test the task programs
+        run: go test -tags task -race -count=1 ./tasks/
+      - name: Test with the race detector and the coverage floor
+        run: go run -tags task ./tasks/coverage.go
+      - run: CGO_ENABLED=1 go build -o /dev/null ./cmd/ollama-tray
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'go.sum') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          save: ${{ github.ref == 'refs/heads/main' }}
+      # Same rule as the nix job: only pushes to main write the binary cache.
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: ollama-tray
+          authToken: ${{ github.event_name == 'push' && secrets.CACHIX_AUTH_TOKEN || '' }}
+          skipPush: ${{ github.event_name != 'push' }}
+      - run: nix build
+      - run: nix flake check
+      - name: Explain a stale vendorHash
+        if: failure()
+        run: |
+          echo "::error::If nix build reported a hash mismatch, vendorHash in flake.nix is stale. See the Development section of the README."
