@@ -1,5 +1,5 @@
 # The test container: a session D-Bus, the tray built from this checkout, and the compiled e2e test.
-FROM golang:1.26.9-trixie@sha256:f06b7122f888680048afb247c4e5f49c0069eb6c4c1ccae0f3f4834527a8d22c AS build
+FROM golang:1.26.11-trixie@sha256:fa340cb59ebeb1d53ac1cccfc334201d938fe5f3458003cccb767096d8e032b8 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
